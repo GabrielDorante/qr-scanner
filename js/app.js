@@ -215,6 +215,8 @@ class QRScanner {
             
             if (this.cameras.length > 1) {
                 this.switchBtn.disabled = false;
+                // Agregar clase activa al botón switch cuando hay múltiples cámaras
+                this.switchBtn.classList.add('switch-active');
             }
         } catch (error) {
             console.error('Error al obtener las cámaras:', error);
@@ -227,16 +229,33 @@ class QRScanner {
             
             await this.getCameras();
             
+            // PRIORIZAR CÁMARA TRASERA (environment) por defecto
             const constraints = {
                 video: {
-                    facingMode: this.cameras.length > 1 ? 'environment' : 'user',
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
+                    facingMode: { ideal: 'environment' }, // Cámara trasera preferida
+                    width: { ideal: 1920, min: 1280 }, // Resolución más alta para mejor detección
+                    height: { ideal: 1080, min: 720 },
+                    focusMode: { ideal: 'continuous' }, // Enfoque continuo
+                    exposureMode: { ideal: 'continuous' } // Exposición continua
                 }
             };
 
+            // Si hay cámaras específicas disponibles, usar la trasera si existe
             if (this.cameras.length > 0) {
-                constraints.video.deviceId = this.cameras[this.currentCameraIndex].deviceId;
+                // Buscar cámara trasera primero
+                const backCamera = this.cameras.find(camera => 
+                    camera.label.toLowerCase().includes('back') || 
+                    camera.label.toLowerCase().includes('rear') ||
+                    camera.label.toLowerCase().includes('environment')
+                );
+                
+                if (backCamera) {
+                    constraints.video.deviceId = { exact: backCamera.deviceId };
+                    this.currentCameraIndex = this.cameras.indexOf(backCamera);
+                } else {
+                    // Si no hay cámara trasera identificable, usar la primera
+                    constraints.video.deviceId = { exact: this.cameras[this.currentCameraIndex].deviceId };
+                }
             }
 
             this.stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -250,8 +269,16 @@ class QRScanner {
                 this.scannerIconBlock.style.display = 'none';
                 this.videoContainer.classList.add('active');
                 
+                // Actualizar estados de botones con colores
                 this.startBtn.disabled = true;
                 this.stopBtn.disabled = false;
+                this.stopBtn.classList.add('stop-active'); // Rojo cuando activo
+                
+                if (this.cameras.length > 1) {
+                    this.switchBtn.disabled = false;
+                    this.switchBtn.classList.add('switch-active'); // Verde cuando activo
+                }
+                
                 this.isScanning = true;
                 this.updateStatus('success', '¡Cámara activa! Apunta hacia un código QR');
                 this.scanQR();
@@ -283,9 +310,13 @@ class QRScanner {
         this.videoContainer.classList.remove('active');
         this.scannerIconBlock.style.display = 'block';
         
+        // Resetear estados de botones
         this.startBtn.disabled = false;
         this.stopBtn.disabled = true;
+        this.stopBtn.classList.remove('stop-active'); // Quitar color rojo
         this.switchBtn.disabled = true;
+        this.switchBtn.classList.remove('switch-active'); // Quitar color verde
+        
         this.updateStatus('info', '');
         this.status.style.display = 'none';
         this.trackEvent('scan_stopped');
@@ -309,7 +340,11 @@ class QRScanner {
         if (this.video.readyState === this.video.HAVE_ENOUGH_DATA) {
             this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
             const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            
+            // Configuración más sensible para mejor detección
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: "dontInvert", // Mejor rendimiento
+            });
             
             if (code) {
                 this.handleQRResult(code.data);
