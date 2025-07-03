@@ -9,12 +9,14 @@ class QRScanner {
         this.currentCameraIndex = 0;
         this.isScanning = false;
         this.currentResult = '';
+        this.deferredPrompt = null;
         
         this.initializeElements();
         this.setupEventListeners();
         this.startCodeAnimation();
         this.registerServiceWorker();
         this.trackPageView();
+        this.setupInstallPrompt();
     }
 
     initializeElements() {
@@ -23,6 +25,7 @@ class QRScanner {
         this.switchBtn = document.getElementById('switchBtn');
         this.status = document.getElementById('status');
         this.videoContainer = document.getElementById('videoContainer');
+        this.scannerIconBlock = document.getElementById('scannerIconBlock');
         this.resultScreen = document.getElementById('resultScreen');
         this.resultText = document.getElementById('resultText');
         this.copyBtn = document.getElementById('copyBtn');
@@ -33,6 +36,9 @@ class QRScanner {
         this.scanAgainBtn = document.getElementById('scanAgainBtn');
         this.updateModal = document.getElementById('updateModal');
         this.updateBtn = document.getElementById('updateBtn');
+        this.installPrompt = document.getElementById('installPrompt');
+        this.installBtn = document.getElementById('installBtn');
+        this.dismissBtn = document.getElementById('dismissBtn');
     }
 
     setupEventListeners() {
@@ -46,6 +52,8 @@ class QRScanner {
         this.closeResult.addEventListener('click', () => this.closeResultScreen());
         this.scanAgainBtn.addEventListener('click', () => this.scanAgain());
         this.updateBtn.addEventListener('click', () => this.closeUpdateModal());
+        this.installBtn.addEventListener('click', () => this.installApp());
+        this.dismissBtn.addEventListener('click', () => this.dismissInstallPrompt());
 
         // Service Worker messages
         navigator.serviceWorker?.addEventListener('message', event => {
@@ -53,12 +61,66 @@ class QRScanner {
                 this.showUpdateModal();
             }
         });
+    }
 
+    setupInstallPrompt() {
         // Handle PWA install prompt
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             this.deferredPrompt = e;
+            
+            // Show install prompt after 3 seconds if not already dismissed
+            setTimeout(() => {
+                if (!localStorage.getItem('installPromptDismissed')) {
+                    this.showInstallPrompt();
+                }
+            }, 3000);
         });
+
+        // Check if already installed
+        window.addEventListener('appinstalled', () => {
+            this.hideInstallPrompt();
+            this.trackEvent('app_installed');
+        });
+
+        // Check if running as PWA
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            this.hideInstallPrompt();
+        }
+    }
+
+    showInstallPrompt() {
+        if (this.installPrompt) {
+            this.installPrompt.classList.add('show');
+        }
+    }
+
+    hideInstallPrompt() {
+        if (this.installPrompt) {
+            this.installPrompt.classList.remove('show');
+        }
+    }
+
+    async installApp() {
+        if (this.deferredPrompt) {
+            this.deferredPrompt.prompt();
+            const { outcome } = await this.deferredPrompt.userChoice;
+            
+            if (outcome === 'accepted') {
+                this.trackEvent('install_accepted');
+            } else {
+                this.trackEvent('install_declined');
+            }
+            
+            this.deferredPrompt = null;
+            this.hideInstallPrompt();
+        }
+    }
+
+    dismissInstallPrompt() {
+        this.hideInstallPrompt();
+        localStorage.setItem('installPromptDismissed', 'true');
+        this.trackEvent('install_dismissed');
     }
 
     async registerServiceWorker() {
@@ -183,7 +245,11 @@ class QRScanner {
             this.video.onloadedmetadata = () => {
                 this.canvas.width = this.video.videoWidth;
                 this.canvas.height = this.video.videoHeight;
+                
+                // Hide icon block and show video
+                this.scannerIconBlock.style.display = 'none';
                 this.videoContainer.classList.add('active');
+                
                 this.startBtn.disabled = true;
                 this.stopBtn.disabled = false;
                 this.isScanning = true;
@@ -212,7 +278,11 @@ class QRScanner {
         }
         
         this.video.srcObject = null;
+        
+        // Show icon block and hide video
         this.videoContainer.classList.remove('active');
+        this.scannerIconBlock.style.display = 'block';
+        
         this.startBtn.disabled = false;
         this.stopBtn.disabled = true;
         this.switchBtn.disabled = true;
@@ -471,13 +541,6 @@ class QRScanner {
 // Initialize the app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     new QRScanner();
-});
-
-// Handle install prompt
-let deferredPrompt;
-window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
 });
 
 // Auto-start scanner if URL contains action=scan
