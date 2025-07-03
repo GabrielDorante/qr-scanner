@@ -10,6 +10,9 @@ class QRScanner {
         this.isScanning = false;
         this.currentResult = '';
         this.deferredPrompt = null;
+        this.scanAttempts = 0;
+        this.lastScanTime = 0;
+        this.detectionStatus = null;
         
         this.initializeElements();
         this.setupEventListeners();
@@ -39,6 +42,7 @@ class QRScanner {
         this.installPrompt = document.getElementById('installPrompt');
         this.installBtn = document.getElementById('installBtn');
         this.dismissBtn = document.getElementById('dismissBtn');
+        this.detectionStatus = document.getElementById('detectionStatus');
     }
 
     setupEventListeners() {
@@ -226,6 +230,7 @@ class QRScanner {
     async startScanning() {
         try {
             this.updateStatus('info', 'Iniciando cámara...');
+            this.scanAttempts = 0;
             
             await this.getCameras();
             
@@ -233,10 +238,12 @@ class QRScanner {
             const constraints = {
                 video: {
                     facingMode: { ideal: 'environment' }, // Cámara trasera preferida
-                    width: { ideal: 1920, min: 1280 }, // Resolución más alta para mejor detección
+                    width: { ideal: 1920, min: 1280 }, // Resolución MÁS ALTA para mejor detección
                     height: { ideal: 1080, min: 720 },
                     focusMode: { ideal: 'continuous' }, // Enfoque continuo
-                    exposureMode: { ideal: 'continuous' } // Exposición continua
+                    exposureMode: { ideal: 'continuous' }, // Exposición continua
+                    whiteBalanceMode: { ideal: 'continuous' }, // Balance de blancos continuo
+                    frameRate: { ideal: 30, min: 15 } // Frame rate alto para mejor detección
                 }
             };
 
@@ -262,8 +269,11 @@ class QRScanner {
             this.video.srcObject = this.stream;
             
             this.video.onloadedmetadata = () => {
+                // CANVAS CON RESOLUCIÓN MÁXIMA para mejor detección
                 this.canvas.width = this.video.videoWidth;
                 this.canvas.height = this.video.videoHeight;
+                
+                console.log(`Video resolution: ${this.video.videoWidth}x${this.video.videoHeight}`);
                 
                 // Hide icon block and show video
                 this.scannerIconBlock.style.display = 'none';
@@ -281,6 +291,7 @@ class QRScanner {
                 
                 this.isScanning = true;
                 this.updateStatus('success', '¡Cámara activa! Apunta hacia un código QR');
+                this.updateDetectionStatus('scanning');
                 this.scanQR();
                 this.trackEvent('scan_started');
             };
@@ -319,6 +330,7 @@ class QRScanner {
         
         this.updateStatus('info', '');
         this.status.style.display = 'none';
+        this.updateDetectionStatus('');
         this.trackEvent('scan_stopped');
     }
 
@@ -334,25 +346,99 @@ class QRScanner {
         this.trackEvent('camera_switched');
     }
 
+    updateDetectionStatus(status) {
+        if (!this.detectionStatus) return;
+        
+        this.detectionStatus.className = 'detection-status';
+        
+        switch (status) {
+            case 'scanning':
+                this.detectionStatus.classList.add('scanning');
+                this.detectionStatus.textContent = 'Buscando QR...';
+                break;
+            case 'found':
+                this.detectionStatus.classList.add('found');
+                this.detectionStatus.textContent = '¡QR Encontrado!';
+                break;
+            default:
+                this.detectionStatus.style.display = 'none';
+                break;
+        }
+    }
+
     scanQR() {
         if (!this.isScanning) return;
         
+        const currentTime = Date.now();
+        
         if (this.video.readyState === this.video.HAVE_ENOUGH_DATA) {
+            // MÚLTIPLES ESTRATEGIAS DE DETECCIÓN
             this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
             const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
             
-            // Configuración más sensible para mejor detección
-            const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                inversionAttempts: "dontInvert", // Mejor rendimiento
+            // ESTRATEGIA 1: Detección normal con configuración optimizada
+            let code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: "attemptBoth", // Probar ambas inversiones
             });
             
+            // ESTRATEGIA 2: Si no se detectó, probar con diferentes regiones
+            if (!code && this.scanAttempts % 3 === 0) {
+                // Escanear región central ampliada (75% del área total)
+                const centerX = Math.floor(this.canvas.width * 0.125);
+                const centerY = Math.floor(this.canvas.height * 0.125);
+                const centerWidth = Math.floor(this.canvas.width * 0.75);
+                const centerHeight = Math.floor(this.canvas.height * 0.75);
+                
+                const centerImageData = this.ctx.getImageData(centerX, centerY, centerWidth, centerHeight);
+                code = jsQR(centerImageData.data, centerWidth, centerHeight, {
+                    inversionAttempts: "attemptBoth",
+                });
+            }
+            
+            // ESTRATEGIA 3: Aumentar contraste y probar de nuevo
+            if (!code && this.scanAttempts % 5 === 0) {
+                this.enhanceImageContrast();
+                const enhancedImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                code = jsQR(enhancedImageData.data, enhancedImageData.width, enhancedImageData.height, {
+                    inversionAttempts: "attemptBoth",
+                });
+            }
+            
+            this.scanAttempts++;
+            
             if (code) {
-                this.handleQRResult(code.data);
+                this.updateDetectionStatus('found');
+                setTimeout(() => {
+                    this.handleQRResult(code.data);
+                }, 300); // Pequeña pausa para mostrar el feedback
                 return;
+            }
+            
+            // Actualizar contador de intentos cada 30 frames
+            if (this.scanAttempts % 30 === 0) {
+                console.log(`Intentos de escaneo: ${this.scanAttempts}`);
             }
         }
         
+        // FRECUENCIA DE ESCANEO OPTIMIZADA: 60 FPS para máxima responsividad
         this.animationId = requestAnimationFrame(() => this.scanQR());
+    }
+
+    enhanceImageContrast() {
+        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        const data = imageData.data;
+        
+        // Aumentar contraste
+        const contrast = 1.5;
+        const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+        
+        for (let i = 0; i < data.length; i += 4) {
+            data[i] = factor * (data[i] - 128) + 128;     // Red
+            data[i + 1] = factor * (data[i + 1] - 128) + 128; // Green
+            data[i + 2] = factor * (data[i + 2] - 128) + 128; // Blue
+        }
+        
+        this.ctx.putImageData(imageData, 0, 0);
     }
 
     handleQRResult(data) {
@@ -362,7 +448,8 @@ class QRScanner {
         this.playSuccessSound();
         this.trackEvent('qr_scanned', { 
             type: this.detectQRType(data),
-            length: data.length 
+            length: data.length,
+            attempts: this.scanAttempts
         });
     }
 
