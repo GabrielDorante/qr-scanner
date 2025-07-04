@@ -204,7 +204,7 @@ const useQRScanner = () => {
   const [scanAttempts, setScanAttempts] = useState(0);
   const [status, setStatus] = useState<{ type: 'info' | 'success' | 'error' | 'warning'; message: string } | null>(null);
   const [qrDetected, setQrDetected] = useState<string | null>(null);
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [cameraPermissionGranted, setCameraPermissionGranted] = useState<boolean | null>(null);
 
   // Check if connection is secure
   const isSecureConnection = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
@@ -219,7 +219,7 @@ const useQRScanner = () => {
 
       // Request permission first
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      setHasPermission(true);
+      setCameraPermissionGranted(true);
       
       // Stop the temporary stream
       stream.getTracks().forEach(track => track.stop());
@@ -242,7 +242,7 @@ const useQRScanner = () => {
       }
     } catch (error) {
       console.error('Error getting cameras:', error);
-      setHasPermission(false);
+      setCameraPermissionGranted(false);
       
       if (error instanceof Error) {
         if (error.message.includes('Permission denied') || error.name === 'NotAllowedError') {
@@ -332,7 +332,7 @@ const useQRScanner = () => {
       // Get cameras first
       await getCameras();
 
-      if (hasPermission === false) {
+      if (cameraPermissionGranted === false) {
         throw new Error('Permisos de cámara denegados');
       }
 
@@ -448,9 +448,9 @@ const useQRScanner = () => {
       }
       
       setIsScanning(false);
-      setHasPermission(false);
+      setCameraPermissionGranted(false);
     }
-  }, [cameras, currentCameraIndex, getCameras, detectQR, isScanning, qrDetected, hasPermission, isSecureConnection]);
+  }, [cameras, currentCameraIndex, getCameras, detectQR, isScanning, qrDetected, cameraPermissionGranted, isSecureConnection]);
 
   // Stop scanning with secure cleanup
   const stopScanning = useCallback(() => {
@@ -508,7 +508,7 @@ const useQRScanner = () => {
     status,
     scanAttempts,
     qrDetected,
-    hasPermission,
+    cameraPermissionGranted,
     isSecureConnection,
     startScanning,
     stopScanning,
@@ -803,7 +803,7 @@ const App: React.FC = () => {
     status,
     scanAttempts,
     qrDetected,
-    hasPermission,
+    cameraPermissionGranted,
     isSecureConnection,
     startScanning,
     stopScanning,
