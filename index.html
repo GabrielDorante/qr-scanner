@@ -287,22 +287,22 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: transparent; /* ELIMINADO EL OVERLAY MORADO */
+            background: transparent;
             display: flex;
             align-items: center;
             justify-content: center;
-            pointer-events: none; /* No interfiere con la cámara */
+            pointer-events: none;
         }
 
         /* Scanner Frame - 25% más grande para mejor detección */
         .scanner-frame {
             width: 375px; /* Aumentado 25% de 300px a 375px */
             height: 375px; /* Aumentado 25% de 300px a 375px */
-            border: 2px solid var(--accent-color); /* Más delgado para menos obstrucción */
+            border: 2px solid var(--accent-color);
             border-radius: 20px;
             position: relative;
             animation: framePulse 2s ease-in-out infinite;
-            opacity: 0.6; /* Más transparente para no obstruir */
+            opacity: 0.6;
         }
 
         .scanner-frame::before {
@@ -317,7 +317,7 @@
             background-size: 400% 400%;
             animation: gradientShift 3s ease infinite;
             z-index: -1;
-            opacity: 0.3; /* Más transparente */
+            opacity: 0.3;
         }
 
         /* Scanning Line - Más sutil */
@@ -327,9 +327,9 @@
             right: 0;
             height: 2px;
             background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
-            animation: scanAnimation 1.5s ease-in-out infinite; /* Más rápido */
+            animation: scanAnimation 1.5s ease-in-out infinite;
             box-shadow: 0 0 10px var(--accent-color);
-            opacity: 0.8; /* Más visible para feedback */
+            opacity: 0.8;
         }
 
         @keyframes scanAnimation {
@@ -372,6 +372,11 @@
         .detection-status.found {
             display: block;
             background: rgba(34, 197, 94, 0.8);
+        }
+
+        .detection-status.processing {
+            display: block;
+            background: rgba(255, 193, 7, 0.8);
         }
 
         /* Controls Block */
@@ -917,7 +922,7 @@
                         <button id="switchBtn" class="btn btn-secondary" disabled>
                             <!-- Camera Switch Icon -->
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
+                                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
                                 <circle cx="12" cy="13" r="3"/>
                                 <path d="M21 17h-2"/>
                                 <path d="M21 21h-2"/>
@@ -1020,8 +1025,13 @@
         </div>
     </div>
 
-    <!-- Scripts -->
+    <!-- Scripts - MÚLTIPLES LIBRERÍAS DE DETECCIÓN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+    <!-- ZXing-js: Librería alternativa más potente -->
+    <script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
+    <!-- QuaggaJS: Especializada en códigos de barras y QR -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    
     <script src="js/app.js"></script>
     <script src="js/analytics.js"></script>
 </body>
