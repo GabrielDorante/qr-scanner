@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Camera, Square, RotateCcw, Copy, ExternalLink, Share2, Search, X, Download, QrCode, Shield, Lock, ScanLine } from 'lucide-react';
+import { Camera, Square, Copy, ExternalLink, Share2, Search, X, Download, QrCode, Shield, Lock, ScanLine } from 'lucide-react';
 import jsQR from 'jsqr';
 
 // Types
