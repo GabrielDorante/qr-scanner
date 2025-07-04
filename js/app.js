@@ -14,12 +14,28 @@ class QRScanner {
         this.lastScanTime = 0;
         this.detectionStatus = null;
         
+        // MÚLTIPLES DETECTORES DE QR
+        this.zxingReader = null;
+        this.initializeZXing();
+        
         this.initializeElements();
         this.setupEventListeners();
         this.startCodeAnimation();
         this.registerServiceWorker();
         this.trackPageView();
         this.setupInstallPrompt();
+    }
+
+    // INICIALIZAR ZXING (LIBRERÍA MÁS POTENTE)
+    async initializeZXing() {
+        try {
+            if (typeof ZXing !== 'undefined') {
+                this.zxingReader = new ZXing.BrowserQRCodeReader();
+                console.log('✅ ZXing inicializado correctamente');
+            }
+        } catch (error) {
+            console.log('⚠️ ZXing no disponible:', error);
+        }
     }
 
     initializeElements() {
@@ -219,7 +235,6 @@ class QRScanner {
             
             if (this.cameras.length > 1) {
                 this.switchBtn.disabled = false;
-                // Agregar clase activa al botón switch cuando hay múltiples cámaras
                 this.switchBtn.classList.add('switch-active');
             }
         } catch (error) {
@@ -273,7 +288,7 @@ class QRScanner {
                 this.canvas.width = this.video.videoWidth;
                 this.canvas.height = this.video.videoHeight;
                 
-                console.log(`Video resolution: ${this.video.videoWidth}x${this.video.videoHeight}`);
+                console.log(`📹 Video resolution: ${this.video.videoWidth}x${this.video.videoHeight}`);
                 
                 // Hide icon block and show video
                 this.scannerIconBlock.style.display = 'none';
@@ -356,6 +371,10 @@ class QRScanner {
                 this.detectionStatus.classList.add('scanning');
                 this.detectionStatus.textContent = 'Buscando QR...';
                 break;
+            case 'processing':
+                this.detectionStatus.classList.add('processing');
+                this.detectionStatus.textContent = 'Procesando...';
+                break;
             case 'found':
                 this.detectionStatus.classList.add('found');
                 this.detectionStatus.textContent = '¡QR Encontrado!';
@@ -366,42 +385,87 @@ class QRScanner {
         }
     }
 
+    // SISTEMA DE DETECCIÓN MULTI-LIBRERÍA AVANZADO
     scanQR() {
         if (!this.isScanning) return;
         
-        const currentTime = Date.now();
-        
         if (this.video.readyState === this.video.HAVE_ENOUGH_DATA) {
-            // MÚLTIPLES ESTRATEGIAS DE DETECCIÓN
+            // Dibujar frame actual
             this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
             const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
             
-            // ESTRATEGIA 1: Detección normal con configuración optimizada
-            let code = jsQR(imageData.data, imageData.width, imageData.height, {
-                inversionAttempts: "attemptBoth", // Probar ambas inversiones
-            });
+            let code = null;
             
-            // ESTRATEGIA 2: Si no se detectó, probar con diferentes regiones
+            // 🔥 ESTRATEGIA 1: ZXING (MÁS POTENTE)
+            if (this.zxingReader && this.scanAttempts % 2 === 0) {
+                try {
+                    this.updateDetectionStatus('processing');
+                    code = this.tryZXingDetection();
+                    if (code) {
+                        console.log('✅ Detectado con ZXing:', code);
+                    }
+                } catch (error) {
+                    // Continuar con otras estrategias
+                }
+            }
+            
+            // 🔥 ESTRATEGIA 2: JSQR CON CONFIGURACIÓN OPTIMIZADA
+            if (!code) {
+                code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "attemptBoth",
+                    locateOptions: {
+                        tryHarder: true,
+                        pureBarcode: false
+                    }
+                });
+                if (code) {
+                    console.log('✅ Detectado con jsQR:', code.data);
+                    code = code.data;
+                }
+            }
+            
+            // 🔥 ESTRATEGIA 3: REGIÓN CENTRAL AMPLIADA (75% del área)
             if (!code && this.scanAttempts % 3 === 0) {
-                // Escanear región central ampliada (75% del área total)
                 const centerX = Math.floor(this.canvas.width * 0.125);
                 const centerY = Math.floor(this.canvas.height * 0.125);
                 const centerWidth = Math.floor(this.canvas.width * 0.75);
                 const centerHeight = Math.floor(this.canvas.height * 0.75);
                 
                 const centerImageData = this.ctx.getImageData(centerX, centerY, centerWidth, centerHeight);
-                code = jsQR(centerImageData.data, centerWidth, centerHeight, {
+                const centerCode = jsQR(centerImageData.data, centerWidth, centerHeight, {
                     inversionAttempts: "attemptBoth",
+                    locateOptions: { tryHarder: true }
                 });
+                
+                if (centerCode) {
+                    console.log('✅ Detectado en región central:', centerCode.data);
+                    code = centerCode.data;
+                }
             }
             
-            // ESTRATEGIA 3: Aumentar contraste y probar de nuevo
+            // 🔥 ESTRATEGIA 4: MEJORA DE CONTRASTE AUTOMÁTICA
             if (!code && this.scanAttempts % 5 === 0) {
                 this.enhanceImageContrast();
                 const enhancedImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-                code = jsQR(enhancedImageData.data, enhancedImageData.width, enhancedImageData.height, {
+                const enhancedCode = jsQR(enhancedImageData.data, enhancedImageData.width, enhancedImageData.height, {
                     inversionAttempts: "attemptBoth",
+                    locateOptions: { tryHarder: true }
                 });
+                
+                if (enhancedCode) {
+                    console.log('✅ Detectado con contraste mejorado:', enhancedCode.data);
+                    code = enhancedCode.data;
+                }
+            }
+            
+            // 🔥 ESTRATEGIA 5: ESCALA MÚLTIPLE
+            if (!code && this.scanAttempts % 7 === 0) {
+                code = this.tryMultiScaleDetection();
+            }
+            
+            // 🔥 ESTRATEGIA 6: FILTROS AVANZADOS
+            if (!code && this.scanAttempts % 10 === 0) {
+                code = this.tryAdvancedFilters();
             }
             
             this.scanAttempts++;
@@ -409,33 +473,118 @@ class QRScanner {
             if (code) {
                 this.updateDetectionStatus('found');
                 setTimeout(() => {
-                    this.handleQRResult(code.data);
-                }, 300); // Pequeña pausa para mostrar el feedback
+                    this.handleQRResult(code);
+                }, 300);
                 return;
             }
             
-            // Actualizar contador de intentos cada 30 frames
-            if (this.scanAttempts % 30 === 0) {
-                console.log(`Intentos de escaneo: ${this.scanAttempts}`);
+            // Log cada 60 intentos
+            if (this.scanAttempts % 60 === 0) {
+                console.log(`🔍 Intentos de escaneo: ${this.scanAttempts} | Resolución: ${this.canvas.width}x${this.canvas.height}`);
             }
         }
         
-        // FRECUENCIA DE ESCANEO OPTIMIZADA: 60 FPS para máxima responsividad
+        // FRECUENCIA MÁXIMA: 60 FPS
         this.animationId = requestAnimationFrame(() => this.scanQR());
+    }
+
+    // DETECCIÓN CON ZXING
+    tryZXingDetection() {
+        try {
+            if (!this.zxingReader) return null;
+            
+            // Convertir canvas a ImageData para ZXing
+            const canvas = this.canvas;
+            const result = this.zxingReader.decodeFromCanvas(canvas);
+            return result ? result.text : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    // DETECCIÓN MULTI-ESCALA
+    tryMultiScaleDetection() {
+        const scales = [0.5, 0.75, 1.25, 1.5];
+        
+        for (const scale of scales) {
+            try {
+                const scaledWidth = Math.floor(this.canvas.width * scale);
+                const scaledHeight = Math.floor(this.canvas.height * scale);
+                
+                const scaledCanvas = document.createElement('canvas');
+                scaledCanvas.width = scaledWidth;
+                scaledCanvas.height = scaledHeight;
+                const scaledCtx = scaledCanvas.getContext('2d');
+                
+                scaledCtx.drawImage(this.video, 0, 0, scaledWidth, scaledHeight);
+                const scaledImageData = scaledCtx.getImageData(0, 0, scaledWidth, scaledHeight);
+                
+                const code = jsQR(scaledImageData.data, scaledWidth, scaledHeight, {
+                    inversionAttempts: "attemptBoth",
+                    locateOptions: { tryHarder: true }
+                });
+                
+                if (code) {
+                    console.log(`✅ Detectado con escala ${scale}:`, code.data);
+                    return code.data;
+                }
+            } catch (error) {
+                continue;
+            }
+        }
+        
+        return null;
+    }
+
+    // FILTROS AVANZADOS DE IMAGEN
+    tryAdvancedFilters() {
+        try {
+            // Crear canvas temporal
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = this.canvas.width;
+            tempCanvas.height = this.canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Aplicar filtros CSS avanzados
+            tempCtx.filter = 'contrast(150%) brightness(110%) saturate(0%)';
+            tempCtx.drawImage(this.video, 0, 0);
+            
+            const filteredImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            
+            const code = jsQR(filteredImageData.data, filteredImageData.width, filteredImageData.height, {
+                inversionAttempts: "attemptBoth",
+                locateOptions: { tryHarder: true }
+            });
+            
+            if (code) {
+                console.log('✅ Detectado con filtros avanzados:', code.data);
+                return code.data;
+            }
+        } catch (error) {
+            // Continuar
+        }
+        
+        return null;
     }
 
     enhanceImageContrast() {
         const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
         const data = imageData.data;
         
-        // Aumentar contraste
-        const contrast = 1.5;
+        // Aumentar contraste y convertir a escala de grises
+        const contrast = 1.8;
         const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
         
         for (let i = 0; i < data.length; i += 4) {
-            data[i] = factor * (data[i] - 128) + 128;     // Red
-            data[i + 1] = factor * (data[i + 1] - 128) + 128; // Green
-            data[i + 2] = factor * (data[i + 2] - 128) + 128; // Blue
+            // Convertir a escala de grises primero
+            const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            
+            // Aplicar contraste
+            const enhanced = Math.max(0, Math.min(255, factor * (gray - 128) + 128));
+            
+            data[i] = enhanced;     // Red
+            data[i + 1] = enhanced; // Green
+            data[i + 2] = enhanced; // Blue
         }
         
         this.ctx.putImageData(imageData, 0, 0);
