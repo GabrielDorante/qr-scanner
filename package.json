@@ -1,0 +1,20 @@
+{
+  "name": "qr-scanner-pwa",
+  "version": "1.0.0",
+  "description": "Escáner QR seguro con procesamiento local - Powered by ideasmagna",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx serve . -p 3000",
+    "build": "echo 'No build needed for vanilla JS'",
+    "preview": "npx serve . -p 3000"
+  },
+  "keywords": [
+    "qr",
+    "scanner",
+    "pwa",
+    "javascript",
+    "vanilla"
+  ],
+  "author": "ideasmagna",
+  "license": "MIT"
+}
