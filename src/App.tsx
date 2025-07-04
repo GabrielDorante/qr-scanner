@@ -8,14 +8,6 @@ interface QRResult {
   type: 'url' | 'email' | 'phone' | 'wifi' | 'text' | 'contact';
 }
 
-interface AnalyticsEvent {
-  event: string;
-  timestamp: string;
-  userAgent: string;
-  url: string;
-  [key: string]: any;
-}
-
 // Privacy Notice Component
 const PrivacyNotice: React.FC<{ onAccept: () => void; onDecline: () => void }> = ({ onAccept, onDecline }) => (
   <div className="fixed inset-0 bg-black/95 backdrop-blur-2xl z-50 p-5 flex items-center justify-center">
@@ -76,385 +68,6 @@ const PrivacyNotice: React.FC<{ onAccept: () => void; onDecline: () => void }> =
   </div>
 );
 
-// QR Scanner Hook with Enhanced Camera Handling
-const useQRScanner = () => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const scanIntervalRef = useRef<number | null>(null);
-  
-  const [isScanning, setIsScanning] = useState(false);
-  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
-  const [currentCameraIndex, setCurrentCameraIndex] = useState(0);
-  const [scanAttempts, setScanAttempts] = useState(0);
-  const [status, setStatus] = useState<{ type: 'info' | 'success' | 'error' | 'warning'; message: string } | null>(null);
-  const [qrDetected, setQrDetected] = useState<string | null>(null);
-  const [cameraPermissionGranted, setCameraPermissionGranted] = useState<boolean | null>(null);
-
-  // Enhanced QR detection with better error handling
-  const detectQR = useCallback((canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) => {
-    try {
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: "attemptBoth",
-      });
-      
-      if (code && code.data) {
-        const data = code.data.trim();
-        
-        // Basic security validation for QR content
-        if (data.length > 2048) {
-          console.warn('QR code data too long, potentially malicious');
-          return null;
-        }
-        
-        console.log('QR Code detected:', {
-          length: data.length,
-          type: detectQRType(data),
-          timestamp: new Date().toISOString()
-        });
-        
-        return data;
-      }
-
-      // Enhanced contrast detection (every 3rd attempt)
-      if (scanAttempts % 3 === 0) {
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = canvas.width;
-        tempCanvas.height = canvas.height;
-        const tempCtx = tempCanvas.getContext('2d')!;
-        
-        tempCtx.filter = 'contrast(150%) brightness(110%) saturate(0%)';
-        tempCtx.drawImage(canvas, 0, 0);
-        
-        const enhancedImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-        const enhancedCode = jsQR(enhancedImageData.data, enhancedImageData.width, enhancedImageData.height, {
-          inversionAttempts: "attemptBoth",
-        });
-        
-        if (enhancedCode && enhancedCode.data) {
-          const data = enhancedCode.data.trim();
-          if (data.length <= 2048) {
-            console.log('QR Code detected (enhanced):', {
-              length: data.length,
-              type: detectQRType(data),
-              timestamp: new Date().toISOString()
-            });
-            return data;
-          }
-        }
-      }
-
-      return null;
-    } catch (error) {
-      console.error('Error in QR detection:', error);
-      return null;
-    }
-  }, [scanAttempts]);
-
-  // Start scanning with proper camera initialization
-  const startScanning = useCallback(async () => {
-    try {
-      setStatus({ type: 'info', message: 'Solicitando acceso a la cámara...' });
-      
-      // Clear any previous state
-      setCameraPermissionGranted(null);
-      setQrDetected(null);
-      
-      // Request camera permission with proper constraints
-      const constraints: MediaStreamConstraints = {
-        video: {
-          facingMode: { ideal: 'environment' }, // Prefer back camera
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 480 },
-          frameRate: { ideal: 30, min: 15 }
-        }
-      };
-
-      // Use specific camera if available
-      if (cameras.length > 0 && cameras[currentCameraIndex]) {
-        delete (constraints.video as any).facingMode;
-        (constraints.video as MediaTrackConstraints).deviceId = { 
-          exact: cameras[currentCameraIndex].deviceId 
-        };
-      }
-
-      console.log('Requesting camera access...');
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      
-      // Permission granted successfully
-      setCameraPermissionGranted(true);
-      streamRef.current = stream;
-      
-      // Get available cameras after permission is granted
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === 'videoinput');
-      setCameras(videoDevices);
-      
-      console.log('Available cameras:', videoDevices.length);
-      
-      // Prefer back camera
-      const backCameraIndex = videoDevices.findIndex(camera => 
-        camera.label.toLowerCase().includes('back') || 
-        camera.label.toLowerCase().includes('rear') ||
-        camera.label.toLowerCase().includes('environment')
-      );
-      
-      if (backCameraIndex !== -1 && currentCameraIndex === 0) {
-        setCurrentCameraIndex(backCameraIndex);
-      }
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        
-        // Wait explicitly for video to be ready using canplay event
-        await new Promise<void>((resolve, reject) => {
-          if (!videoRef.current) {
-            reject(new Error('Video element not available'));
-            return;
-          }
-          
-          const video = videoRef.current;
-          
-          const onCanPlay = () => {
-            console.log('Video can play:', {
-              width: video.videoWidth,
-              height: video.videoHeight,
-              readyState: video.readyState
-            });
-            video.removeEventListener('canplay', onCanPlay);
-            video.removeEventListener('error', onError);
-            resolve();
-          };
-          
-          const onError = (error: Event) => {
-            console.error('Video error:', error);
-            video.removeEventListener('canplay', onCanPlay);
-            video.removeEventListener('error', onError);
-            reject(new Error('Video loading failed'));
-          };
-          
-          video.addEventListener('canplay', onCanPlay);
-          video.addEventListener('error', onError);
-          
-          // Fallback timeout
-          setTimeout(() => {
-            if (video.readyState >= 3) { // HAVE_FUTURE_DATA
-              video.removeEventListener('canplay', onCanPlay);
-              video.removeEventListener('error', onError);
-              resolve();
-            }
-          }, 5000);
-        });
-        
-        // Start playing
-        await videoRef.current.play();
-        console.log('Video started playing successfully');
-      }
-
-      // Set scanning state only after video is ready
-      setIsScanning(true);
-      setScanAttempts(0);
-      setStatus({ type: 'success', message: '📷 Cámara activa. Apunta hacia un código QR' });
-
-      // Start scanning loop with proper canvas synchronization
-      scanIntervalRef.current = window.setInterval(() => {
-        if (!videoRef.current || !canvasRef.current || !isScanning) return;
-
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-
-        if (!ctx || video.readyState < 3) return; // HAVE_FUTURE_DATA
-
-        try {
-          // Ensure canvas has correct dimensions
-          if (video.videoWidth > 0 && video.videoHeight > 0) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
-
-            const result = detectQR(canvas, ctx);
-            if (result && !qrDetected) {
-              setQrDetected(result);
-            }
-
-            setScanAttempts(prev => prev + 1);
-          }
-        } catch (error) {
-          console.error('Error in scan loop:', error);
-        }
-      }, 100);
-
-    } catch (error) {
-      console.error('Error starting camera:', error);
-      setCameraPermissionGranted(false);
-      
-      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-      
-      if (errorMessage.includes('Permission denied') || errorMessage.includes('NotAllowedError')) {
-        setStatus({ type: 'error', message: '🚫 Permisos de cámara denegados. Por favor, permite el acceso a la cámara en tu navegador.' });
-      } else if (errorMessage.includes('NotFoundError') || errorMessage.includes('DevicesNotFoundError')) {
-        setStatus({ type: 'error', message: '📷 No se encontró ninguna cámara disponible en tu dispositivo.' });
-      } else if (errorMessage.includes('NotSupportedError')) {
-        setStatus({ type: 'error', message: '🔒 Tu navegador no soporta acceso a la cámara. Intenta con Chrome o Firefox.' });
-      } else {
-        setStatus({ type: 'error', message: `❌ Error al acceder a la cámara: ${errorMessage}` });
-      }
-      
-      setIsScanning(false);
-    }
-  }, [cameras, currentCameraIndex, detectQR, isScanning, qrDetected]);
-
-  // Stop scanning with proper cleanup
-  const stopScanning = useCallback(() => {
-    console.log('Stopping scanner...');
-    
-    setIsScanning(false);
-    setQrDetected(null);
-    
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current);
-      scanIntervalRef.current = null;
-    }
-    
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => {
-        track.stop();
-        console.log('Camera track stopped:', track.label);
-      });
-      streamRef.current = null;
-    }
-    
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    
-    setStatus(null);
-    setScanAttempts(0);
-  }, []);
-
-  // Switch camera
-  const switchCamera = useCallback(async () => {
-    if (cameras.length <= 1) return;
-    
-    const newIndex = (currentCameraIndex + 1) % cameras.length;
-    setCurrentCameraIndex(newIndex);
-    
-    if (isScanning) {
-      stopScanning();
-      setTimeout(() => startScanning(), 500);
-    }
-  }, [cameras.length, currentCameraIndex, isScanning, stopScanning, startScanning]);
-
-  // Reset camera permissions
-  const resetCameraPermissions = useCallback(() => {
-    localStorage.removeItem('privacyNoticeAccepted');
-    setCameraPermissionGranted(null);
-    stopScanning();
-  }, [stopScanning]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current);
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, []);
-
-  return {
-    videoRef,
-    canvasRef,
-    isScanning,
-    cameras,
-    status,
-    scanAttempts,
-    qrDetected,
-    cameraPermissionGranted,
-    startScanning,
-    stopScanning,
-    switchCamera,
-    resetCameraPermissions
-  };
-};
-
-// Analytics Hook with Privacy Protection
-const useAnalytics = () => {
-  const trackEvent = useCallback((eventName: string, properties: Record<string, any> = {}) => {
-    // Only track essential events, no personal data
-    const eventData: AnalyticsEvent = {
-      event: eventName,
-      timestamp: new Date().toISOString(),
-      userAgent: 'anonymized', // Anonymize user agent
-      url: 'anonymized', // Anonymize URL
-      ...properties
-    };
-
-    // Store locally only, no external tracking
-    const events = JSON.parse(localStorage.getItem('qr_analytics') || '[]');
-    events.push(eventData);
-    localStorage.setItem('qr_analytics', JSON.stringify(events.slice(-50))); // Keep only last 50 events
-
-    console.log('Privacy-Safe Analytics Event:', eventData);
-  }, []);
-
-  const clearAnalytics = useCallback(() => {
-    localStorage.removeItem('qr_analytics');
-    console.log('Analytics data cleared');
-  }, []);
-
-  return { trackEvent, clearAnalytics };
-};
-
-// Install Prompt Hook
-const useInstallPrompt = () => {
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      
-      setTimeout(() => {
-        if (!localStorage.getItem('installPromptDismissed')) {
-          setShowInstallPrompt(true);
-        }
-      }, 3000);
-    };
-
-    window.addEventListener('beforeinstallprompt', handler);
-    
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  const installApp = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        console.log('User accepted the install prompt');
-      } else {
-        console.log('User dismissed the install prompt');
-      }
-      setDeferredPrompt(null);
-      setShowInstallPrompt(false);
-    }
-  };
-
-  const dismissPrompt = () => {
-    setShowInstallPrompt(false);
-    localStorage.setItem('installPromptDismissed', 'true');
-  };
-
-  return { showInstallPrompt, installApp, dismissPrompt };
-};
-
 // Utility functions
 const detectQRType = (data: string): QRResult['type'] => {
   if (/^https?:\/\//i.test(data)) return 'url';
@@ -488,55 +101,7 @@ const playSuccessSound = () => {
   }
 };
 
-// Animated Text Component
-const AnimatedText: React.FC<{ text: string; className?: string }> = ({ text, className = '' }) => {
-  const [displayText, setDisplayText] = useState('');
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  useEffect(() => {
-    if (currentIndex < text.length) {
-      const timer = setTimeout(() => {
-        setDisplayText(prev => prev + text[currentIndex]);
-        setCurrentIndex(prev => prev + 1);
-      }, Math.random() * 100 + 50);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [currentIndex, text]);
-
-  useEffect(() => {
-    setDisplayText('');
-    setCurrentIndex(0);
-  }, [text]);
-
-  return (
-    <span className={className}>
-      {displayText}
-      {currentIndex < text.length && (
-        <span className="animate-pulse text-blue-400">|</span>
-      )}
-    </span>
-  );
-};
-
-// Components
-const StatusMessage: React.FC<{ status: { type: string; message: string } | null }> = ({ status }) => {
-  if (!status || !status.message) return null;
-
-  const bgColor = {
-    info: 'bg-blue-500/10 border-blue-500/30 text-blue-400',
-    success: 'bg-green-500/10 border-green-500/30 text-green-400',
-    error: 'bg-red-500/10 border-red-500/30 text-red-400',
-    warning: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
-  }[status.type] || 'bg-gray-500/10 border-gray-500/30 text-gray-400';
-
-  return (
-    <div className={`p-4 rounded-2xl text-center font-medium border backdrop-blur-xl ${bgColor}`}>
-      <AnimatedText text={status.message} />
-    </div>
-  );
-};
-
+// Toast Component
 const Toast: React.FC<{ message: string; onClose: () => void }> = ({ message, onClose }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 3000);
@@ -544,14 +109,15 @@ const Toast: React.FC<{ message: string; onClose: () => void }> = ({ message, on
   }, [onClose]);
 
   return (
-    <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-blue-500/90 text-white px-6 py-3 rounded-xl backdrop-blur-xl z-50 animate-in slide-in-from-bottom-2">
+    <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-blue-500/90 text-white px-6 py-3 rounded-xl backdrop-blur-xl z-50">
       {message}
     </div>
   );
 };
 
+// Install Prompt Component
 const InstallPrompt: React.FC<{ onInstall: () => void; onDismiss: () => void }> = ({ onInstall, onDismiss }) => (
-  <div className="fixed bottom-5 left-5 right-5 bg-white/5 border border-blue-500/30 rounded-2xl p-5 backdrop-blur-2xl z-50 animate-in slide-in-from-bottom-2">
+  <div className="fixed bottom-5 left-5 right-5 bg-white/5 border border-blue-500/30 rounded-2xl p-5 backdrop-blur-2xl z-50">
     <div className="flex items-center gap-4">
       <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
         <Download className="w-6 h-6 text-white" />
@@ -578,6 +144,7 @@ const InstallPrompt: React.FC<{ onInstall: () => void; onDismiss: () => void }> 
   </div>
 );
 
+// Result Screen Component
 const ResultScreen: React.FC<{
   result: QRResult;
   onClose: () => void;
@@ -587,7 +154,7 @@ const ResultScreen: React.FC<{
   onShare: () => void;
   onSearch: () => void;
 }> = ({ result, onClose, onScanAgain, onCopy, onOpen, onShare, onSearch }) => (
-  <div className="fixed inset-0 bg-black/95 backdrop-blur-2xl z-50 p-5 overflow-y-auto animate-in fade-in-0">
+  <div className="fixed inset-0 bg-black/95 backdrop-blur-2xl z-50 p-5 overflow-y-auto">
     <button
       onClick={onClose}
       className="absolute top-8 right-8 w-12 h-12 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-colors"
@@ -606,7 +173,7 @@ const ResultScreen: React.FC<{
       <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-8 backdrop-blur-xl">
         <h3 className="text-xl font-medium text-blue-400 mb-3">Contenido:</h3>
         <div className="bg-black/30 p-4 rounded-xl border border-white/10 font-mono text-sm leading-relaxed break-all text-white">
-          <AnimatedText text={result.data} />
+          {result.data}
         </div>
       </div>
       
@@ -660,28 +227,23 @@ const ResultScreen: React.FC<{
 
 // Main App Component
 const App: React.FC = () => {
-  const { trackEvent, clearAnalytics } = useAnalytics();
-  const { showInstallPrompt, installApp, dismissPrompt } = useInstallPrompt();
-  const {
-    videoRef,
-    canvasRef,
-    isScanning,
-    cameras,
-    status,
-    scanAttempts,
-    qrDetected,
-    cameraPermissionGranted,
-    startScanning,
-    stopScanning,
-    switchCamera,
-    resetCameraPermissions
-  } = useQRScanner();
+  // Refs
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const scanIntervalRef = useRef<number | null>(null);
 
+  // State
+  const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<QRResult | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [showPrivacyNotice, setShowPrivacyNotice] = useState(false);
+  const [status, setStatus] = useState<string>('');
+  const [cameraPermissionGranted, setCameraPermissionGranted] = useState<boolean | null>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
 
-  // Check if user has seen privacy notice
+  // Check privacy notice on mount
   useEffect(() => {
     const hasSeenPrivacyNotice = localStorage.getItem('privacyNoticeAccepted');
     if (!hasSeenPrivacyNotice) {
@@ -689,37 +251,193 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Install prompt handling
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      
+      setTimeout(() => {
+        if (!localStorage.getItem('installPromptDismissed')) {
+          setShowInstallPrompt(true);
+        }
+      }, 3000);
+    };
+
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  // QR Detection function - SIMPLIFIED
+  const detectQR = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx || video.readyState !== 4) return; // HAVE_ENOUGH_DATA
+
+    try {
+      // Set canvas size to match video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      // Draw current video frame to canvas
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // Get image data
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      
+      // Try to detect QR code
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "attemptBoth",
+      });
+
+      if (code && code.data) {
+        console.log('QR Code detected:', code.data);
+        
+        const qrResult: QRResult = {
+          data: code.data,
+          type: detectQRType(code.data)
+        };
+        
+        setResult(qrResult);
+        stopScanning();
+        playSuccessSound();
+      }
+    } catch (error) {
+      console.error('Error detecting QR:', error);
+    }
+  }, []);
+
+  // Start scanning - SIMPLIFIED APPROACH
+  const startScanning = useCallback(async () => {
+    console.log('Starting camera...');
+    
+    try {
+      setStatus('Solicitando acceso a la cámara...');
+      setCameraPermissionGranted(null);
+
+      // Simple constraints - prefer back camera
+      const constraints = {
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
+
+      console.log('Requesting camera permission...');
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      console.log('Camera permission granted');
+      setCameraPermissionGranted(true);
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        
+        // Wait for video to be ready
+        const video = videoRef.current;
+        
+        await new Promise<void>((resolve, reject) => {
+          const onLoadedMetadata = () => {
+            console.log('Video metadata loaded');
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('error', onError);
+            resolve();
+          };
+          
+          const onError = (error: Event) => {
+            console.error('Video error:', error);
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('error', onError);
+            reject(new Error('Video loading failed'));
+          };
+          
+          video.addEventListener('loadedmetadata', onLoadedMetadata);
+          video.addEventListener('error', onError);
+        });
+
+        // Start playing
+        await video.play();
+        console.log('Video playing');
+        
+        setIsScanning(true);
+        setStatus('📷 Cámara activa. Apunta hacia un código QR');
+
+        // Start scanning loop
+        scanIntervalRef.current = window.setInterval(detectQR, 100);
+      }
+
+    } catch (error) {
+      console.error('Camera error:', error);
+      setCameraPermissionGranted(false);
+      
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          setStatus('🚫 Permisos de cámara denegados');
+        } else if (error.name === 'NotFoundError') {
+          setStatus('📷 No se encontró cámara');
+        } else {
+          setStatus(`❌ Error: ${error.message}`);
+        }
+      }
+      
+      setIsScanning(false);
+    }
+  }, [detectQR]);
+
+  // Stop scanning
+  const stopScanning = useCallback(() => {
+    console.log('Stopping camera...');
+    
+    setIsScanning(false);
+    setStatus('');
+    
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+      scanIntervalRef.current = null;
+    }
+    
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('Camera track stopped');
+      });
+      streamRef.current = null;
+    }
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
   // Handle privacy notice
   const handlePrivacyAccept = useCallback(() => {
     localStorage.setItem('privacyNoticeAccepted', 'true');
     setShowPrivacyNotice(false);
-    trackEvent('privacy_notice_accepted');
-  }, [trackEvent]);
+  }, []);
 
   const handlePrivacyDecline = useCallback(() => {
     setShowPrivacyNotice(false);
     setToast('Para usar el escáner QR, necesitas aceptar los términos de privacidad.');
   }, []);
 
-  // Handle QR detection
-  useEffect(() => {
-    if (qrDetected && !result) {
-      const qrResult: QRResult = {
-        data: qrDetected,
-        type: detectQRType(qrDetected)
-      };
-      
-      setResult(qrResult);
-      stopScanning();
-      playSuccessSound();
-      trackEvent('qr_scanned', {
-        type: qrResult.type,
-        length: qrDetected.length,
-        attempts: scanAttempts
-      });
-    }
-  }, [qrDetected, result, stopScanning, trackEvent, scanAttempts]);
-
+  // Handle start scanning
   const handleStartScanning = useCallback(async () => {
     const hasAcceptedPrivacy = localStorage.getItem('privacyNoticeAccepted');
     if (!hasAcceptedPrivacy) {
@@ -727,25 +445,8 @@ const App: React.FC = () => {
       return;
     }
 
-    try {
-      await startScanning();
-      trackEvent('scan_started');
-    } catch (error) {
-      trackEvent('scan_error', { 
-        error: (error as Error).message
-      });
-    }
-  }, [startScanning, trackEvent]);
-
-  const handleStopScanning = useCallback(() => {
-    stopScanning();
-    trackEvent('scan_stopped');
-  }, [stopScanning, trackEvent]);
-
-  const handleSwitchCamera = useCallback(() => {
-    switchCamera();
-    trackEvent('camera_switched');
-  }, [switchCamera, trackEvent]);
+    await startScanning();
+  }, [startScanning]);
 
   // Result actions
   const copyResult = useCallback(async () => {
@@ -754,28 +455,25 @@ const App: React.FC = () => {
     try {
       await navigator.clipboard.writeText(result.data);
       setToast('¡Copiado al portapapeles!');
-      trackEvent('result_copied');
     } catch (error) {
       setToast('No se pudo copiar');
     }
-  }, [result, trackEvent]);
+  }, [result]);
 
   const openResult = useCallback(() => {
     if (!result || result.type !== 'url') return;
     
-    // Security check for URLs
     try {
       const url = new URL(result.data);
       if (url.protocol === 'http:' || url.protocol === 'https:') {
         window.open(result.data, '_blank', 'noopener,noreferrer');
-        trackEvent('result_opened', { secure: url.protocol === 'https:' });
       } else {
         setToast('URL no segura detectada');
       }
     } catch (error) {
       setToast('URL inválida');
     }
-  }, [result, trackEvent]);
+  }, [result]);
 
   const shareResult = useCallback(async () => {
     if (!result) return;
@@ -788,7 +486,6 @@ const App: React.FC = () => {
     try {
       if (navigator.share) {
         await navigator.share(shareData);
-        trackEvent('result_shared');
       } else {
         await copyResult();
       }
@@ -797,33 +494,39 @@ const App: React.FC = () => {
         setToast('No se pudo compartir');
       }
     }
-  }, [result, trackEvent, copyResult]);
+  }, [result, copyResult]);
 
   const searchResult = useCallback(() => {
     if (!result) return;
     
     const searchURL = `https://www.google.com/search?q=${encodeURIComponent(result.data)}`;
     window.open(searchURL, '_blank', 'noopener,noreferrer');
-    trackEvent('result_searched');
-  }, [result, trackEvent]);
+  }, [result]);
 
   const scanAgain = useCallback(() => {
     setResult(null);
     handleStartScanning();
   }, [handleStartScanning]);
 
-  // Track page view on mount
-  useEffect(() => {
-    trackEvent('page_view');
-    console.log('QR Scanner loaded');
-  }, [trackEvent]);
+  // Install app
+  const installApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log('Install prompt result:', outcome);
+      setDeferredPrompt(null);
+      setShowInstallPrompt(false);
+    }
+  };
+
+  const dismissPrompt = () => {
+    setShowInstallPrompt(false);
+    localStorage.setItem('installPromptDismissed', 'true');
+  };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white relative">
-      {/* FONDO SIMPLE TEMPORAL PARA PRUEBAS */}
-      
-      {/* Main Content */}
-      <div className="relative z-10 max-w-4xl mx-auto p-5">
+    <div className="min-h-screen bg-gray-900 text-white">
+      <div className="max-w-4xl mx-auto p-5">
         {/* Header */}
         <div className="text-center mb-10">
           <h1 className="text-4xl md:text-5xl font-light mb-2 text-blue-400">
@@ -836,7 +539,6 @@ const App: React.FC = () => {
 
         {/* Scanner Area */}
         <div className="bg-gray-800 border border-gray-700 rounded-3xl mb-6 overflow-hidden">
-          {/* Scanner Display */}
           <div className="p-8">
             {!isScanning ? (
               <div className="text-center mb-8">
@@ -844,7 +546,6 @@ const App: React.FC = () => {
                   <QrCode className="w-16 h-16 text-white/60" />
                 </div>
                 
-                {/* Permission Status */}
                 {cameraPermissionGranted !== null && (
                   <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs ${
                     cameraPermissionGranted 
@@ -865,15 +566,10 @@ const App: React.FC = () => {
                     playsInline
                     muted
                     className="w-full h-full object-cover"
-                    style={{ 
-                      zIndex: 1,
-                      position: 'relative',
-                      display: 'block'
-                    }}
                   />
                   
                   {/* Scanner Overlay */}
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 2 }}>
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="w-64 h-64 border-2 border-blue-400 rounded-2xl relative">
                       {/* Animated Scanning Line */}
                       <div 
@@ -893,8 +589,8 @@ const App: React.FC = () => {
                   </div>
 
                   {/* Detection Status */}
-                  <div className="absolute top-4 left-4 bg-black/70 text-blue-400 px-3 py-1 rounded-full text-sm backdrop-blur-sm" style={{ zIndex: 3 }}>
-                    📷 Escaneando... ({scanAttempts})
+                  <div className="absolute top-4 left-4 bg-black/70 text-blue-400 px-3 py-1 rounded-full text-sm backdrop-blur-sm">
+                    📷 Escaneando...
                   </div>
                 </div>
                 <canvas ref={canvasRef} className="hidden" />
@@ -903,84 +599,32 @@ const App: React.FC = () => {
 
             {/* Status */}
             {status && (
-              <div className="mb-6">
-                <StatusMessage status={status} />
+              <div className="mb-6 p-4 rounded-2xl text-center font-medium border backdrop-blur-xl bg-blue-500/10 border-blue-500/30 text-blue-400">
+                {status}
               </div>
             )}
           </div>
 
-          {/* Controls Section */}
-          <div className="bg-gray-700 border-t border-gray-600">
-            <div className="p-8">
-              <div className="max-w-md mx-auto space-y-4">
-                {/* Main Scan Button */}
-                {!isScanning ? (
-                  <button
-                    onClick={handleStartScanning}
-                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-medium transition-colors"
-                  >
-                    <ScanLine className="w-5 h-5 inline mr-2" />
-                    Escanear
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleStopScanning}
-                    className="w-full py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-medium transition-colors"
-                  >
-                    <Square className="w-5 h-5 inline mr-2" />
-                    Detener
-                  </button>
-                )}
-                
-                {/* Separator */}
-                <div className="flex items-center py-2">
-                  <div className="flex-1 h-px bg-gray-600"></div>
-                </div>
-                
-                {/* Secondary Controls */}
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={handleStopScanning}
-                    disabled={!isScanning}
-                    className={`py-3 rounded-2xl font-medium transition-colors flex items-center justify-center gap-2 ${
-                      isScanning 
-                        ? 'bg-red-600 hover:bg-red-700 text-white' 
-                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    <Square className="w-4 h-4" />
-                    <span className="text-sm">Stop</span>
-                  </button>
-                  
-                  <button
-                    onClick={handleSwitchCamera}
-                    disabled={!isScanning || cameras.length <= 1}
-                    className={`py-3 rounded-2xl font-medium transition-colors flex items-center justify-center gap-2 ${
-                      isScanning && cameras.length > 1
-                        ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    <Camera className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                {/* Privacy Controls */}
-                <div className="pt-4 border-t border-gray-600 space-y-2">
-                  <button
-                    onClick={resetCameraPermissions}
-                    className="w-full py-2 text-xs text-yellow-400 hover:text-yellow-300 transition-colors"
-                  >
-                    ↻ Resetear permisos de cámara
-                  </button>
-                  <button
-                    onClick={clearAnalytics}
-                    className="w-full py-2 text-xs text-white/60 hover:text-white/80 transition-colors"
-                  >
-                    🗑️ Limpiar datos analíticos
-                  </button>
-                </div>
-              </div>
+          {/* Controls */}
+          <div className="bg-gray-700 border-t border-gray-600 p-8">
+            <div className="max-w-md mx-auto">
+              {!isScanning ? (
+                <button
+                  onClick={handleStartScanning}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-medium transition-colors flex items-center justify-center gap-2"
+                >
+                  <ScanLine className="w-5 h-5" />
+                  Escanear
+                </button>
+              ) : (
+                <button
+                  onClick={stopScanning}
+                  className="w-full py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-medium transition-colors flex items-center justify-center gap-2"
+                >
+                  <Square className="w-5 h-5" />
+                  Detener
+                </button>
+              )}
             </div>
           </div>
         </div>
