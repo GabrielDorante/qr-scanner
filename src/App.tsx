@@ -1013,6 +1013,18 @@ const App: React.FC = () => {
                 <div className="w-32 h-32 mx-auto mb-6 bg-gradient-to-br from-gray-600/20 to-gray-800/20 rounded-3xl flex items-center justify-center shadow-2xl backdrop-blur-sm border border-white/10">
                   <QrCode className="w-16 h-16 text-white/60" />
                 </div>
+                
+                {/* Permission Status */}
+                {cameraPermissionGranted !== null && (
+                  <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs ${
+                    cameraPermissionGranted 
+                      ? 'bg-green-500/20 border border-green-500/30 text-green-400' 
+                      : 'bg-red-500/20 border border-red-500/30 text-red-400'
+                  }`}>
+                    <Shield className="w-3 h-3" />
+                    <span>{cameraPermissionGranted ? 'Permisos Concedidos' : 'Permisos Denegados'}</span>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="relative mb-8">
