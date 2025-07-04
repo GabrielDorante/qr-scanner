@@ -410,3 +410,4 @@ const ResultScreen: React.FC<{
   onClose: () => void;
   onScanAgain: () => void;
   onCopy: () => v
+};
