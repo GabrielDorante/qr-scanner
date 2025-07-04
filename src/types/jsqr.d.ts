@@ -1,5 +1,5 @@
 declare module 'jsqr' {
-  export interface QRCode {
+  interface QRCode {
     binaryData: number[];
     data: string;
     chunks: any[];
@@ -16,14 +16,16 @@ declare module 'jsqr' {
     };
   }
 
-  export interface Options {
+  interface Options {
     inversionAttempts?: "dontInvert" | "onlyInvert" | "attemptBoth" | "invertFirst";
   }
 
-  export default function jsQR(
+  function jsQR(
     data: Uint8ClampedArray,
     width: number,
     height: number,
     options?: Options
   ): QRCode | null;
+
+  export = jsQR;
 }
