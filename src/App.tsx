@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Camera, Square, RotateCcw, Copy, ExternalLink, Share2, Search, X, Download, QrCode } from 'lucide-react';
+import { Camera, Square, RotateCcw, Copy, ExternalLink, Share2, Search, X, Download, QrCode, Shield, Lock } from 'lucide-react';
+import jsQR from 'jsqr';
 
 // Types
 interface QRResult {
@@ -14,6 +15,78 @@ interface AnalyticsEvent {
   url: string;
   [key: string]: any;
 }
+
+// Privacy Notice Component
+const PrivacyNotice: React.FC<{ onAccept: () => void; onDecline: () => void }> = ({ onAccept, onDecline }) => (
+  <div className="fixed inset-0 bg-black/95 backdrop-blur-2xl z-50 p-5 flex items-center justify-center">
+    <div className="max-w-md bg-white/10 border border-white/20 rounded-3xl p-8 backdrop-blur-xl">
+      <div className="text-center mb-6">
+        <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center">
+          <Shield className="w-8 h-8 text-white" />
+        </div>
+        <h2 className="text-2xl font-medium text-white mb-2">Privacidad y Seguridad</h2>
+        <p className="text-white/60 text-sm">Tu privacidad es importante para nosotros</p>
+      </div>
+      
+      <div className="space-y-4 mb-8 text-sm text-white/80">
+        <div className="flex items-start gap-3">
+          <Lock className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-medium text-white">Procesamiento Local</p>
+            <p className="text-white/60">Todo el escaneo se realiza en tu dispositivo. No enviamos imágenes a servidores externos.</p>
+          </div>
+        </div>
+        
+        <div className="flex items-start gap-3">
+          <Camera className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-medium text-white">Acceso a Cámara</p>
+            <p className="text-white/60">Solo accedemos a tu cámara para escanear códigos QR. No grabamos ni almacenamos video.</p>
+          </div>
+        </div>
+        
+        <div className="flex items-start gap-3">
+          <QrCode className="w-4 h-4 text-purple-400 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-medium text-white">Datos del QR</p>
+            <p className="text-white/60">Los datos escaneados se procesan localmente y solo se almacenan temporalmente para mostrarte el resultado.</p>
+          </div>
+        </div>
+      </div>
+      
+      <div className="space-y-3">
+        <button
+          onClick={onAccept}
+          className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-2xl font-medium hover:scale-105 transition-transform"
+        >
+          Entiendo y Acepto
+        </button>
+        <button
+          onClick={onDecline}
+          className="w-full py-3 bg-white/10 border border-white/20 text-white/80 rounded-2xl font-medium hover:bg-white/20 transition-colors"
+        >
+          No Permitir
+        </button>
+      </div>
+      
+      <p className="text-xs text-white/40 text-center mt-4">
+        Puedes revocar estos permisos en cualquier momento desde la configuración de tu navegador.
+      </p>
+    </div>
+  </div>
+);
+
+// Security Status Component
+const SecurityStatus: React.FC<{ isSecure: boolean }> = ({ isSecure }) => (
+  <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs ${
+    isSecure 
+      ? 'bg-green-500/20 border border-green-500/30 text-green-400' 
+      : 'bg-red-500/20 border border-red-500/30 text-red-400'
+  }`}>
+    <Shield className="w-3 h-3" />
+    <span>{isSecure ? 'Conexión Segura' : 'Conexión No Segura'}</span>
+  </div>
+);
 
 // Floating Code Fragments Component
 const FloatingCodeFragments: React.FC = () => {
@@ -118,25 +191,44 @@ const CornerLights: React.FC = () => {
   );
 };
 
-// QR Scanner Hook
+// QR Scanner Hook with Enhanced Security
 const useQRScanner = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const animationRef = useRef<number | null>(null);
+  const scanIntervalRef = useRef<number | null>(null);
   
   const [isScanning, setIsScanning] = useState(false);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [currentCameraIndex, setCurrentCameraIndex] = useState(0);
   const [scanAttempts, setScanAttempts] = useState(0);
   const [status, setStatus] = useState<{ type: 'info' | 'success' | 'error' | 'warning'; message: string } | null>(null);
+  const [qrDetected, setQrDetected] = useState<string | null>(null);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
-  // Get available cameras
+  // Check if connection is secure
+  const isSecureConnection = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
+
+  // Get available cameras with enhanced security
   const getCameras = useCallback(async () => {
     try {
+      // Check for secure connection
+      if (!isSecureConnection) {
+        throw new Error('Se requiere una conexión segura (HTTPS) para acceder a la cámara');
+      }
+
+      // Request permission first
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      setHasPermission(true);
+      
+      // Stop the temporary stream
+      stream.getTracks().forEach(track => track.stop());
+      
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(device => device.kind === 'videoinput');
       setCameras(videoDevices);
+      
+      console.log('Available cameras:', videoDevices.length);
       
       // Prefer back camera
       const backCameraIndex = videoDevices.findIndex(camera => 
@@ -150,119 +242,233 @@ const useQRScanner = () => {
       }
     } catch (error) {
       console.error('Error getting cameras:', error);
+      setHasPermission(false);
+      
+      if (error instanceof Error) {
+        if (error.message.includes('Permission denied') || error.name === 'NotAllowedError') {
+          setStatus({ type: 'error', message: 'Permisos de cámara denegados. Por favor, permite el acceso para continuar.' });
+        } else if (error.message.includes('secure connection')) {
+          setStatus({ type: 'error', message: 'Se requiere una conexión segura (HTTPS) para usar la cámara.' });
+        } else {
+          setStatus({ type: 'error', message: 'Error al acceder a las cámaras' });
+        }
+      }
     }
-  }, []);
+  }, [isSecureConnection]);
 
-  // Enhanced QR detection with multiple methods
+  // Enhanced QR detection with security validation
   const detectQR = useCallback((canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) => {
-    // Method 1: Standard detection
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    
-    // @ts-ignore - jsQR is loaded via script tag
-    let code = window.jsQR?.(imageData.data, imageData.width, imageData.height, {
-      inversionAttempts: "attemptBoth",
-    });
-    
-    if (code) return code.data;
-
-    // Method 2: Enhanced contrast (every 3rd attempt)
-    if (scanAttempts % 3 === 0) {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = canvas.width;
-      tempCanvas.height = canvas.height;
-      const tempCtx = tempCanvas.getContext('2d')!;
+    try {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       
-      // Apply contrast enhancement
-      tempCtx.filter = 'contrast(150%) brightness(110%) saturate(0%)';
-      tempCtx.drawImage(canvas, 0, 0);
-      
-      const enhancedImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-      // @ts-ignore
-      code = window.jsQR?.(enhancedImageData.data, enhancedImageData.width, enhancedImageData.height, {
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
         inversionAttempts: "attemptBoth",
       });
       
-      if (code) return code.data;
-    }
+      if (code && code.data) {
+        // Basic security validation for QR content
+        const data = code.data.trim();
+        
+        // Check for potentially malicious content
+        if (data.length > 2048) {
+          console.warn('QR code data too long, potentially malicious');
+          return null;
+        }
+        
+        // Log detection for security audit
+        console.log('QR Code detected securely:', {
+          length: data.length,
+          type: detectQRType(data),
+          timestamp: new Date().toISOString()
+        });
+        
+        return data;
+      }
 
-    // Method 3: Region scanning (every 5th attempt)
-    if (scanAttempts % 5 === 0) {
-      const centerX = Math.floor(canvas.width * 0.125);
-      const centerY = Math.floor(canvas.height * 0.125);
-      const centerWidth = Math.floor(canvas.width * 0.75);
-      const centerHeight = Math.floor(canvas.height * 0.75);
-      
-      try {
-        const centerImageData = ctx.getImageData(centerX, centerY, centerWidth, centerHeight);
-        // @ts-ignore
-        code = window.jsQR?.(centerImageData.data, centerWidth, centerHeight, {
+      // Enhanced contrast detection (every 3rd attempt)
+      if (scanAttempts % 3 === 0) {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempCtx = tempCanvas.getContext('2d')!;
+        
+        tempCtx.filter = 'contrast(150%) brightness(110%) saturate(0%)';
+        tempCtx.drawImage(canvas, 0, 0);
+        
+        const enhancedImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+        const enhancedCode = jsQR(enhancedImageData.data, enhancedImageData.width, enhancedImageData.height, {
           inversionAttempts: "attemptBoth",
         });
         
-        if (code) return code.data;
-      } catch (error) {
-        // Continue
+        if (enhancedCode && enhancedCode.data) {
+          const data = enhancedCode.data.trim();
+          if (data.length <= 2048) {
+            console.log('QR Code detected (enhanced):', {
+              length: data.length,
+              type: detectQRType(data),
+              timestamp: new Date().toISOString()
+            });
+            return data;
+          }
+        }
       }
-    }
 
-    return null;
+      return null;
+    } catch (error) {
+      console.error('Error in QR detection:', error);
+      return null;
+    }
   }, [scanAttempts]);
 
-  // Start scanning
+  // Start scanning with enhanced security
   const startScanning = useCallback(async () => {
     try {
-      setStatus({ type: 'info', message: 'Iniciando cámara...' });
+      if (!isSecureConnection) {
+        throw new Error('Se requiere una conexión segura (HTTPS) para acceder a la cámara');
+      }
+
+      setStatus({ type: 'info', message: 'Solicitando permisos de cámara...' });
+      
+      // Get cameras first
       await getCameras();
+
+      if (hasPermission === false) {
+        throw new Error('Permisos de cámara denegados');
+      }
 
       const constraints: MediaStreamConstraints = {
         video: {
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1920, min: 1280 },
-          height: { ideal: 1080, min: 720 },
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 },
           frameRate: { ideal: 30, min: 15 }
         }
       };
 
-      if (cameras.length > 0) {
+      // Use specific camera if available
+      if (cameras.length > 0 && cameras[currentCameraIndex]) {
+        delete (constraints.video as any).facingMode;
         (constraints.video as MediaTrackConstraints).deviceId = { 
           exact: cameras[currentCameraIndex].deviceId 
         };
       }
+
+      console.log('Requesting camera with secure constraints');
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await new Promise<void>((resolve) => {
-          if (videoRef.current) {
-            videoRef.current.onloadedmetadata = () => resolve();
+        
+        // Wait for video to be ready
+        await new Promise<void>((resolve, reject) => {
+          if (!videoRef.current) {
+            reject(new Error('Video element not available'));
+            return;
           }
+          
+          const video = videoRef.current;
+          
+          const onLoadedMetadata = () => {
+            console.log('Video metadata loaded securely:', {
+              width: video.videoWidth,
+              height: video.videoHeight,
+              readyState: video.readyState
+            });
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            resolve();
+          };
+          
+          const onError = (error: Event) => {
+            console.error('Video error:', error);
+            video.removeEventListener('error', onError);
+            reject(new Error('Video loading failed'));
+          };
+          
+          video.addEventListener('loadedmetadata', onLoadedMetadata);
+          video.addEventListener('error', onError);
+          
+          // Fallback timeout
+          setTimeout(() => {
+            if (video.readyState >= 2) { // HAVE_CURRENT_DATA
+              video.removeEventListener('loadedmetadata', onLoadedMetadata);
+              video.removeEventListener('error', onError);
+              resolve();
+            }
+          }, 3000);
         });
+        
+        // Start playing
+        await videoRef.current.play();
       }
 
       setIsScanning(true);
       setScanAttempts(0);
-      setStatus({ type: 'success', message: '¡Cámara activa! Apunta hacia un código QR' });
+      setStatus({ type: 'success', message: '🔒 Cámara activa de forma segura. Apunta hacia un código QR' });
+
+      // Start secure scanning loop
+      scanIntervalRef.current = window.setInterval(() => {
+        if (!videoRef.current || !canvasRef.current || !isScanning) return;
+
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        if (!ctx || video.readyState < 2) return; // HAVE_CURRENT_DATA
+
+        try {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0);
+
+          const result = detectQR(canvas, ctx);
+          if (result && !qrDetected) {
+            setQrDetected(result);
+          }
+
+          setScanAttempts(prev => prev + 1);
+        } catch (error) {
+          console.error('Error in secure scan loop:', error);
+        }
+      }, 100);
 
     } catch (error) {
-      console.error('Error accessing camera:', error);
-      setStatus({ type: 'error', message: 'No se pudo acceder a la cámara. Verifica los permisos.' });
-      throw error;
+      console.error('Error starting secure camera:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      
+      if (errorMessage.includes('Permission denied') || errorMessage.includes('NotAllowedError')) {
+        setStatus({ type: 'error', message: '🚫 Permisos de cámara denegados. Por favor, permite el acceso a la cámara.' });
+      } else if (errorMessage.includes('NotFoundError') || errorMessage.includes('DevicesNotFoundError')) {
+        setStatus({ type: 'error', message: '📷 No se encontró ninguna cámara disponible.' });
+      } else if (errorMessage.includes('secure connection')) {
+        setStatus({ type: 'error', message: '🔒 Se requiere una conexión segura (HTTPS) para usar la cámara.' });
+      } else {
+        setStatus({ type: 'error', message: `❌ Error al acceder a la cámara: ${errorMessage}` });
+      }
+      
+      setIsScanning(false);
+      setHasPermission(false);
     }
-  }, [cameras, currentCameraIndex, getCameras]);
+  }, [cameras, currentCameraIndex, getCameras, detectQR, isScanning, qrDetected, hasPermission, isSecureConnection]);
 
-  // Stop scanning
+  // Stop scanning with secure cleanup
   const stopScanning = useCallback(() => {
-    setIsScanning(false);
+    console.log('Stopping scanner securely...');
     
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
-      animationRef.current = null;
+    setIsScanning(false);
+    setQrDetected(null);
+    
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+      scanIntervalRef.current = null;
     }
     
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('Camera track stopped securely:', track.label);
+      });
       streamRef.current = null;
     }
     
@@ -287,44 +493,12 @@ const useQRScanner = () => {
     }
   }, [cameras.length, currentCameraIndex, isScanning, stopScanning, startScanning]);
 
-  // Continuous scanning loop
+  // Cleanup on unmount
   useEffect(() => {
-    if (!isScanning) return;
-
-    const scanLoop = () => {
-      if (!videoRef.current || !canvasRef.current) return;
-
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-
-      if (!ctx || video.readyState !== video.HAVE_ENOUGH_DATA) {
-        animationRef.current = requestAnimationFrame(scanLoop);
-        return;
-      }
-
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0);
-
-      const result = detectQR(canvas, ctx);
-      if (result) {
-        // QR detected - will be handled by parent component
-        return result;
-      }
-
-      setScanAttempts(prev => prev + 1);
-      animationRef.current = requestAnimationFrame(scanLoop);
-    };
-
-    animationRef.current = requestAnimationFrame(scanLoop);
-
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
+      stopScanning();
     };
-  }, [isScanning, detectQR]);
+  }, [stopScanning]);
 
   return {
     videoRef,
@@ -333,32 +507,41 @@ const useQRScanner = () => {
     cameras,
     status,
     scanAttempts,
+    qrDetected,
+    hasPermission,
+    isSecureConnection,
     startScanning,
     stopScanning,
     switchCamera
   };
 };
 
-// Analytics Hook
+// Analytics Hook with Privacy Protection
 const useAnalytics = () => {
   const trackEvent = useCallback((eventName: string, properties: Record<string, any> = {}) => {
+    // Only track essential events, no personal data
     const eventData: AnalyticsEvent = {
       event: eventName,
       timestamp: new Date().toISOString(),
-      userAgent: navigator.userAgent,
-      url: window.location.href,
+      userAgent: 'anonymized', // Anonymize user agent
+      url: 'anonymized', // Anonymize URL
       ...properties
     };
 
-    // Store in localStorage for now (could be IndexedDB)
+    // Store locally only, no external tracking
     const events = JSON.parse(localStorage.getItem('qr_analytics') || '[]');
     events.push(eventData);
-    localStorage.setItem('qr_analytics', JSON.stringify(events.slice(-100))); // Keep last 100 events
+    localStorage.setItem('qr_analytics', JSON.stringify(events.slice(-50))); // Keep only last 50 events
 
-    console.log('Analytics Event:', eventData);
+    console.log('Privacy-Safe Analytics Event:', eventData);
   }, []);
 
-  return { trackEvent };
+  const clearAnalytics = useCallback(() => {
+    localStorage.removeItem('qr_analytics');
+    console.log('Analytics data cleared');
+  }, []);
+
+  return { trackEvent, clearAnalytics };
 };
 
 // Install Prompt Hook
@@ -610,7 +793,7 @@ const ResultScreen: React.FC<{
 
 // Main App Component
 const App: React.FC = () => {
-  const { trackEvent } = useAnalytics();
+  const { trackEvent, clearAnalytics } = useAnalytics();
   const { showInstallPrompt, installApp, dismissPrompt } = useInstallPrompt();
   const {
     videoRef,
@@ -619,6 +802,9 @@ const App: React.FC = () => {
     cameras,
     status,
     scanAttempts,
+    qrDetected,
+    hasPermission,
+    isSecureConnection,
     startScanning,
     stopScanning,
     switchCamera
@@ -626,64 +812,65 @@ const App: React.FC = () => {
 
   const [result, setResult] = useState<QRResult | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [showPrivacyNotice, setShowPrivacyNotice] = useState(false);
 
-  // Handle QR detection result
-  const handleQRResult = useCallback((data: string) => {
-    const qrResult: QRResult = {
-      data,
-      type: detectQRType(data)
-    };
-    
-    setResult(qrResult);
-    stopScanning();
-    playSuccessSound();
-    trackEvent('qr_scanned', {
-      type: qrResult.type,
-      length: data.length,
-      attempts: scanAttempts
-    });
-  }, [stopScanning, trackEvent, scanAttempts]);
+  // Check if user has seen privacy notice
+  useEffect(() => {
+    const hasSeenPrivacyNotice = localStorage.getItem('privacyNoticeAccepted');
+    if (!hasSeenPrivacyNotice) {
+      setShowPrivacyNotice(true);
+    }
+  }, []);
 
-  // Enhanced scanning with result detection
+  // Handle privacy notice
+  const handlePrivacyAccept = useCallback(() => {
+    localStorage.setItem('privacyNoticeAccepted', 'true');
+    setShowPrivacyNotice(false);
+    trackEvent('privacy_notice_accepted');
+  }, [trackEvent]);
+
+  const handlePrivacyDecline = useCallback(() => {
+    setShowPrivacyNotice(false);
+    setToast('Para usar el escáner QR, necesitas aceptar los términos de privacidad.');
+  }, []);
+
+  // Handle QR detection
+  useEffect(() => {
+    if (qrDetected && !result) {
+      const qrResult: QRResult = {
+        data: qrDetected,
+        type: detectQRType(qrDetected)
+      };
+      
+      setResult(qrResult);
+      stopScanning();
+      playSuccessSound();
+      trackEvent('qr_scanned', {
+        type: qrResult.type,
+        length: qrDetected.length,
+        attempts: scanAttempts,
+        secure: isSecureConnection
+      });
+    }
+  }, [qrDetected, result, stopScanning, trackEvent, scanAttempts, isSecureConnection]);
+
   const handleStartScanning = useCallback(async () => {
+    const hasAcceptedPrivacy = localStorage.getItem('privacyNoticeAccepted');
+    if (!hasAcceptedPrivacy) {
+      setShowPrivacyNotice(true);
+      return;
+    }
+
     try {
       await startScanning();
-      trackEvent('scan_started');
-      
-      // Set up continuous scanning
-      const scanInterval = setInterval(() => {
-        if (!isScanning || !videoRef.current || !canvasRef.current) {
-          clearInterval(scanInterval);
-          return;
-        }
-
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-
-        if (!ctx || video.readyState !== video.HAVE_ENOUGH_DATA) return;
-
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0);
-
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        
-        // @ts-ignore - jsQR is loaded via script tag
-        const code = window.jsQR?.(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: "attemptBoth",
-        });
-
-        if (code) {
-          clearInterval(scanInterval);
-          handleQRResult(code.data);
-        }
-      }, 100); // Check every 100ms
-
+      trackEvent('scan_started', { secure: isSecureConnection });
     } catch (error) {
-      trackEvent('scan_error', { error: (error as Error).message });
+      trackEvent('scan_error', { 
+        error: (error as Error).message,
+        secure: isSecureConnection 
+      });
     }
-  }, [startScanning, trackEvent, isScanning, handleQRResult]);
+  }, [startScanning, trackEvent, isSecureConnection]);
 
   const handleStopScanning = useCallback(() => {
     stopScanning();
@@ -711,8 +898,18 @@ const App: React.FC = () => {
   const openResult = useCallback(() => {
     if (!result || result.type !== 'url') return;
     
-    window.open(result.data, '_blank', 'noopener,noreferrer');
-    trackEvent('result_opened');
+    // Security check for URLs
+    try {
+      const url = new URL(result.data);
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        window.open(result.data, '_blank', 'noopener,noreferrer');
+        trackEvent('result_opened', { secure: url.protocol === 'https:' });
+      } else {
+        setToast('URL no segura detectada');
+      }
+    } catch (error) {
+      setToast('URL inválida');
+    }
   }, [result, trackEvent]);
 
   const shareResult = useCallback(async () => {
@@ -752,8 +949,9 @@ const App: React.FC = () => {
 
   // Track page view on mount
   useEffect(() => {
-    trackEvent('page_view');
-  }, [trackEvent]);
+    trackEvent('page_view', { secure: isSecureConnection });
+    console.log('QR Scanner loaded with enhanced security');
+  }, [trackEvent, isSecureConnection]);
 
   return (
     <div className="min-h-screen bg-black text-white relative overflow-hidden">
@@ -786,14 +984,24 @@ const App: React.FC = () => {
 
       {/* Main Content */}
       <div className="relative z-10 max-w-4xl mx-auto p-5">
-        {/* Header */}
+        {/* Header with Security Status */}
         <div className="text-center mb-10 animate-in fade-in-0 slide-in-from-top-4">
+          <div className="flex justify-center mb-4">
+            <SecurityStatus isSecure={isSecureConnection} />
+          </div>
+          
           <h1 className="text-4xl md:text-5xl font-light mb-2 bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
             <AnimatedText text="QR Scanner" />
           </h1>
           <p className="text-white/60 text-sm tracking-wide">
             <AnimatedText text="Powered by ideasmagna" />
           </p>
+          
+          {!isSecureConnection && (
+            <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-yellow-400 text-sm">
+              ⚠️ Para mayor seguridad, usa HTTPS
+            </div>
+          )}
         </div>
 
         {/* Scanner Area */}
@@ -839,7 +1047,7 @@ const App: React.FC = () => {
 
                   {/* Detection Status */}
                   <div className="absolute top-4 left-4 bg-black/70 text-blue-400 px-3 py-1 rounded-full text-sm backdrop-blur-sm">
-                    Buscando QR... ({scanAttempts})
+                    🔒 Escaneando seguro... ({scanAttempts})
                   </div>
                 </div>
                 <canvas ref={canvasRef} className="hidden" />
@@ -875,8 +1083,8 @@ const App: React.FC = () => {
                     onClick={handleStartScanning}
                     className="w-full py-4 bg-gradient-to-r from-gray-600/30 to-gray-700/30 backdrop-blur-xl border border-white/20 text-white rounded-2xl font-medium hover:scale-105 transition-all duration-300 shadow-lg hover:shadow-blue-500/25"
                   >
-                    <Camera className="w-5 h-5 inline mr-2" />
-                    Escanear
+                    <Shield className="w-5 h-5 inline mr-2" />
+                    Escanear Seguro
                   </button>
                 ) : (
                   <button
@@ -921,11 +1129,29 @@ const App: React.FC = () => {
                     <span className="text-sm">Cambiar</span>
                   </button>
                 </div>
+                
+                {/* Privacy Controls */}
+                <div className="pt-4 border-t border-white/10">
+                  <button
+                    onClick={clearAnalytics}
+                    className="w-full py-2 text-xs text-white/60 hover:text-white/80 transition-colors"
+                  >
+                    🗑️ Limpiar datos analíticos
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Privacy Notice */}
+      {showPrivacyNotice && (
+        <PrivacyNotice 
+          onAccept={handlePrivacyAccept} 
+          onDecline={handlePrivacyDecline} 
+        />
+      )}
 
       {/* Result Screen */}
       {result && (
