@@ -76,109 +76,6 @@ const PrivacyNotice: React.FC<{ onAccept: () => void; onDecline: () => void }> =
   </div>
 );
 
-// Floating Code Fragments Component
-const FloatingCodeFragments: React.FC = () => {
-  const codeFragments = [
-    'const scanner = useQRScanner();',
-    'if (code) return code.data;',
-    'video.readyState === HAVE_ENOUGH_DATA',
-    'ctx.drawImage(video, 0, 0);',
-    'navigator.mediaDevices.getUserMedia',
-    'jsQR(imageData.data, width, height)',
-    'setIsScanning(true);',
-    'trackEvent("qr_scanned");'
-  ];
-
-  return (
-    <div className="fixed inset-0 pointer-events-none z-5">
-      {[...Array(3)].map((_, i) => (
-        <div
-          key={i}
-          className="absolute text-gray-600/20 font-mono text-xs animate-pulse"
-          style={{
-            left: `${10 + Math.random() * 80}%`,
-            top: `${10 + Math.random() * 80}%`,
-            animationDelay: `${Math.random() * 5}s`,
-            animationDuration: `${3 + Math.random() * 2}s`
-          }}
-        >
-          {codeFragments[Math.floor(Math.random() * codeFragments.length)]}
-        </div>
-      ))}
-    </div>
-  );
-};
-
-// Animated Particles Component
-const AnimatedParticles: React.FC = () => {
-  const [particles, setParticles] = useState<Array<{
-    id: number;
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    opacity: number;
-  }>>([]);
-
-  useEffect(() => {
-    const initialParticles = [...Array(25)].map((_, i) => ({
-      id: i,
-      x: Math.random() * 100,
-      y: Math.random() * 100,
-      vx: (Math.random() - 0.5) * 0.5,
-      vy: (Math.random() - 0.5) * 0.5,
-      opacity: Math.random() * 0.5 + 0.1
-    }));
-    setParticles(initialParticles);
-
-    const interval = setInterval(() => {
-      setParticles(prev => prev.map(particle => ({
-        ...particle,
-        x: (particle.x + particle.vx + 100) % 100,
-        y: (particle.y + particle.vy + 100) % 100,
-        opacity: 0.1 + Math.sin(Date.now() * 0.001 + particle.id) * 0.2
-      })));
-    }, 50);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div className="fixed inset-0 pointer-events-none z-5">
-      {particles.map(particle => (
-        <div
-          key={particle.id}
-          className="absolute w-1 h-1 bg-blue-400 rounded-full transition-all duration-75"
-          style={{
-            left: `${particle.x}%`,
-            top: `${particle.y}%`,
-            opacity: particle.opacity
-          }}
-        />
-      ))}
-    </div>
-  );
-};
-
-// Corner Lights Component
-const CornerLights: React.FC = () => {
-  return (
-    <>
-      {/* Yellow light - top left */}
-      <div className="fixed top-0 left-0 w-32 h-32 pointer-events-none z-5">
-        <div className="w-full h-full bg-gradient-radial from-yellow-400/20 via-yellow-400/5 to-transparent rounded-full animate-pulse" 
-             style={{ animationDuration: '3s' }} />
-      </div>
-      
-      {/* Violet-blue light - bottom right */}
-      <div className="fixed bottom-0 right-0 w-32 h-32 pointer-events-none z-5">
-        <div className="w-full h-full bg-gradient-radial from-violet-500/20 via-violet-500/5 to-transparent rounded-full animate-pulse" 
-             style={{ animationDuration: '4s', animationDelay: '1s' }} />
-      </div>
-    </>
-  );
-};
-
 // QR Scanner Hook with Enhanced Camera Handling
 const useQRScanner = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -922,53 +819,28 @@ const App: React.FC = () => {
   }, [trackEvent]);
 
   return (
-    <div className="min-h-screen bg-black text-white relative overflow-hidden">
-      {/* Background Effects */}
-      <div className="fixed inset-0 z-0">
-        {/* Enhanced Grid */}
-        <div 
-          className="absolute inset-0 opacity-40"
-          style={{
-            backgroundImage: `
-              linear-gradient(rgba(59, 130, 246, 0.15) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(59, 130, 246, 0.15) 1px, transparent 1px)
-            `,
-            backgroundSize: '15px 15px'
-          }}
-        />
-        
-        {/* Gradient Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 via-transparent to-purple-500/20" />
-      </div>
-
-      {/* Animated Particles */}
-      <AnimatedParticles />
+    <div className="min-h-screen bg-gray-900 text-white relative">
+      {/* FONDO SIMPLE TEMPORAL PARA PRUEBAS */}
       
-      {/* Floating Code Fragments */}
-      <FloatingCodeFragments />
-      
-      {/* Corner Lights */}
-      <CornerLights />
-
       {/* Main Content */}
       <div className="relative z-10 max-w-4xl mx-auto p-5">
         {/* Header */}
-        <div className="text-center mb-10 animate-in fade-in-0 slide-in-from-top-4">
-          <h1 className="text-4xl md:text-5xl font-light mb-2 bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
-            <AnimatedText text="QR Scanner" />
+        <div className="text-center mb-10">
+          <h1 className="text-4xl md:text-5xl font-light mb-2 text-blue-400">
+            QR Scanner
           </h1>
           <p className="text-white/60 text-sm tracking-wide">
-            <AnimatedText text="Powered by ideasmagna" />
+            Powered by ideasmagna
           </p>
         </div>
 
         {/* Scanner Area */}
-        <div className="bg-white/5 border border-white/10 rounded-3xl backdrop-blur-xl mb-6 animate-in fade-in-0 slide-in-from-bottom-4 overflow-hidden">
+        <div className="bg-gray-800 border border-gray-700 rounded-3xl mb-6 overflow-hidden">
           {/* Scanner Display */}
           <div className="p-8">
             {!isScanning ? (
               <div className="text-center mb-8">
-                <div className="w-32 h-32 mx-auto mb-6 bg-gradient-to-br from-gray-600/20 to-gray-800/20 rounded-3xl flex items-center justify-center shadow-2xl backdrop-blur-sm border border-white/10">
+                <div className="w-32 h-32 mx-auto mb-6 bg-gray-700 rounded-3xl flex items-center justify-center">
                   <QrCode className="w-16 h-16 text-white/60" />
                 </div>
                 
@@ -986,17 +858,22 @@ const App: React.FC = () => {
               </div>
             ) : (
               <div className="relative mb-8">
-                <div className="relative w-full max-w-2xl mx-auto h-96 rounded-2xl overflow-hidden bg-black border border-white/20">
+                <div className="relative w-full max-w-2xl mx-auto h-96 rounded-2xl overflow-hidden bg-black border border-gray-600">
                   <video
                     ref={videoRef}
                     autoPlay
                     playsInline
                     muted
                     className="w-full h-full object-cover"
+                    style={{ 
+                      zIndex: 1,
+                      position: 'relative',
+                      display: 'block'
+                    }}
                   />
                   
                   {/* Scanner Overlay */}
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 2 }}>
                     <div className="w-64 h-64 border-2 border-blue-400 rounded-2xl relative">
                       {/* Animated Scanning Line */}
                       <div 
@@ -1016,7 +893,7 @@ const App: React.FC = () => {
                   </div>
 
                   {/* Detection Status */}
-                  <div className="absolute top-4 left-4 bg-black/70 text-blue-400 px-3 py-1 rounded-full text-sm backdrop-blur-sm">
+                  <div className="absolute top-4 left-4 bg-black/70 text-blue-400 px-3 py-1 rounded-full text-sm backdrop-blur-sm" style={{ zIndex: 3 }}>
                     📷 Escaneando... ({scanAttempts})
                   </div>
                 </div>
@@ -1032,26 +909,15 @@ const App: React.FC = () => {
             )}
           </div>
 
-          {/* Controls Section with Diagonal Pattern */}
-          <div 
-            className="relative bg-gray-800/20 border-t border-white/10"
-            style={{
-              backgroundImage: `repeating-linear-gradient(
-                45deg,
-                transparent,
-                transparent 4px,
-                rgba(255, 255, 255, 0.02) 4px,
-                rgba(255, 255, 255, 0.02) 6px
-              )`
-            }}
-          >
+          {/* Controls Section */}
+          <div className="bg-gray-700 border-t border-gray-600">
             <div className="p-8">
               <div className="max-w-md mx-auto space-y-4">
                 {/* Main Scan Button */}
                 {!isScanning ? (
                   <button
                     onClick={handleStartScanning}
-                    className="w-full py-4 bg-gradient-to-r from-gray-600/30 to-gray-700/30 backdrop-blur-xl border border-white/20 text-white rounded-2xl font-medium hover:scale-105 transition-all duration-300 shadow-lg hover:shadow-blue-500/25"
+                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-medium transition-colors"
                   >
                     <ScanLine className="w-5 h-5 inline mr-2" />
                     Escanear
@@ -1059,7 +925,7 @@ const App: React.FC = () => {
                 ) : (
                   <button
                     onClick={handleStopScanning}
-                    className="w-full py-4 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-2xl font-medium hover:scale-105 transition-transform shadow-lg"
+                    className="w-full py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-medium transition-colors"
                   >
                     <Square className="w-5 h-5 inline mr-2" />
                     Detener
@@ -1068,7 +934,7 @@ const App: React.FC = () => {
                 
                 {/* Separator */}
                 <div className="flex items-center py-2">
-                  <div className="flex-1 h-px bg-white/10"></div>
+                  <div className="flex-1 h-px bg-gray-600"></div>
                 </div>
                 
                 {/* Secondary Controls */}
@@ -1076,10 +942,10 @@ const App: React.FC = () => {
                   <button
                     onClick={handleStopScanning}
                     disabled={!isScanning}
-                    className={`py-3 rounded-2xl font-medium transition-all duration-300 flex items-center justify-center gap-2 ${
+                    className={`py-3 rounded-2xl font-medium transition-colors flex items-center justify-center gap-2 ${
                       isScanning 
-                        ? 'bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30' 
-                        : 'bg-white/5 border border-white/10 text-white/40 cursor-not-allowed'
+                        ? 'bg-red-600 hover:bg-red-700 text-white' 
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                     }`}
                   >
                     <Square className="w-4 h-4" />
@@ -1089,10 +955,10 @@ const App: React.FC = () => {
                   <button
                     onClick={handleSwitchCamera}
                     disabled={!isScanning || cameras.length <= 1}
-                    className={`py-3 rounded-2xl font-medium transition-all duration-300 flex items-center justify-center gap-2 ${
+                    className={`py-3 rounded-2xl font-medium transition-colors flex items-center justify-center gap-2 ${
                       isScanning && cameras.length > 1
-                        ? 'bg-blue-500/20 border border-blue-500/30 text-blue-400 hover:bg-blue-500/30' 
-                        : 'bg-white/5 border border-white/10 text-white/40 cursor-not-allowed'
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                     }`}
                   >
                     <Camera className="w-4 h-4" />
@@ -1100,7 +966,7 @@ const App: React.FC = () => {
                 </div>
                 
                 {/* Privacy Controls */}
-                <div className="pt-4 border-t border-white/10 space-y-2">
+                <div className="pt-4 border-t border-gray-600 space-y-2">
                   <button
                     onClick={resetCameraPermissions}
                     className="w-full py-2 text-xs text-yellow-400 hover:text-yellow-300 transition-colors"
