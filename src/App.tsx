@@ -5,7 +5,7 @@ import jsQR from 'jsqr';
 // Types
 interface QRResult {
   data: string;
-  type: 'url' | 'email' | 'phone' | 'wifi' | 'text';
+  type: 'url' | 'email' | 'phone' | 'wifi' | 'text' | 'contact';
 }
 
 interface AnalyticsEvent {
@@ -179,7 +179,7 @@ const CornerLights: React.FC = () => {
   );
 };
 
-// QR Scanner Hook with Enhanced Security
+// QR Scanner Hook with Enhanced Camera Handling
 const useQRScanner = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -194,7 +194,7 @@ const useQRScanner = () => {
   const [qrDetected, setQrDetected] = useState<string | null>(null);
   const [cameraPermissionGranted, setCameraPermissionGranted] = useState<boolean | null>(null);
 
-  // Enhanced QR detection with security validation
+  // Enhanced QR detection with better error handling
   const detectQR = useCallback((canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) => {
     try {
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -204,17 +204,15 @@ const useQRScanner = () => {
       });
       
       if (code && code.data) {
-        // Basic security validation for QR content
         const data = code.data.trim();
         
-        // Check for potentially malicious content
+        // Basic security validation for QR content
         if (data.length > 2048) {
           console.warn('QR code data too long, potentially malicious');
           return null;
         }
         
-        // Log detection for security audit
-        console.log('QR Code detected securely:', {
+        console.log('QR Code detected:', {
           length: data.length,
           type: detectQRType(data),
           timestamp: new Date().toISOString()
@@ -258,13 +256,14 @@ const useQRScanner = () => {
     }
   }, [scanAttempts]);
 
-  // Start scanning with proper permission handling
+  // Start scanning with proper camera initialization
   const startScanning = useCallback(async () => {
     try {
       setStatus({ type: 'info', message: 'Solicitando acceso a la cámara...' });
       
       // Clear any previous state
       setCameraPermissionGranted(null);
+      setQrDetected(null);
       
       // Request camera permission with proper constraints
       const constraints: MediaStreamConstraints = {
@@ -275,6 +274,14 @@ const useQRScanner = () => {
           frameRate: { ideal: 30, min: 15 }
         }
       };
+
+      // Use specific camera if available
+      if (cameras.length > 0 && cameras[currentCameraIndex]) {
+        delete (constraints.video as any).facingMode;
+        (constraints.video as MediaTrackConstraints).deviceId = { 
+          exact: cameras[currentCameraIndex].deviceId 
+        };
+      }
 
       console.log('Requesting camera access...');
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -290,10 +297,21 @@ const useQRScanner = () => {
       
       console.log('Available cameras:', videoDevices.length);
       
+      // Prefer back camera
+      const backCameraIndex = videoDevices.findIndex(camera => 
+        camera.label.toLowerCase().includes('back') || 
+        camera.label.toLowerCase().includes('rear') ||
+        camera.label.toLowerCase().includes('environment')
+      );
+      
+      if (backCameraIndex !== -1 && currentCameraIndex === 0) {
+        setCurrentCameraIndex(backCameraIndex);
+      }
+      
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         
-        // Wait for video to be ready
+        // Wait explicitly for video to be ready using canplay event
         await new Promise<void>((resolve, reject) => {
           if (!videoRef.current) {
             reject(new Error('Video element not available'));
@@ -302,44 +320,48 @@ const useQRScanner = () => {
           
           const video = videoRef.current;
           
-          const onLoadedMetadata = () => {
-            console.log('Video metadata loaded:', {
+          const onCanPlay = () => {
+            console.log('Video can play:', {
               width: video.videoWidth,
               height: video.videoHeight,
               readyState: video.readyState
             });
-            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('canplay', onCanPlay);
+            video.removeEventListener('error', onError);
             resolve();
           };
           
           const onError = (error: Event) => {
             console.error('Video error:', error);
+            video.removeEventListener('canplay', onCanPlay);
             video.removeEventListener('error', onError);
             reject(new Error('Video loading failed'));
           };
           
-          video.addEventListener('loadedmetadata', onLoadedMetadata);
+          video.addEventListener('canplay', onCanPlay);
           video.addEventListener('error', onError);
           
           // Fallback timeout
           setTimeout(() => {
-            if (video.readyState >= 2) { // HAVE_CURRENT_DATA
-              video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            if (video.readyState >= 3) { // HAVE_FUTURE_DATA
+              video.removeEventListener('canplay', onCanPlay);
               video.removeEventListener('error', onError);
               resolve();
             }
-          }, 3000);
+          }, 5000);
         });
         
         // Start playing
         await videoRef.current.play();
+        console.log('Video started playing successfully');
       }
 
+      // Set scanning state only after video is ready
       setIsScanning(true);
       setScanAttempts(0);
       setStatus({ type: 'success', message: '📷 Cámara activa. Apunta hacia un código QR' });
 
-      // Start scanning loop
+      // Start scanning loop with proper canvas synchronization
       scanIntervalRef.current = window.setInterval(() => {
         if (!videoRef.current || !canvasRef.current || !isScanning) return;
 
@@ -347,19 +369,22 @@ const useQRScanner = () => {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
 
-        if (!ctx || video.readyState < 2) return; // HAVE_CURRENT_DATA
+        if (!ctx || video.readyState < 3) return; // HAVE_FUTURE_DATA
 
         try {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          ctx.drawImage(video, 0, 0);
+          // Ensure canvas has correct dimensions
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
 
-          const result = detectQR(canvas, ctx);
-          if (result && !qrDetected) {
-            setQrDetected(result);
+            const result = detectQR(canvas, ctx);
+            if (result && !qrDetected) {
+              setQrDetected(result);
+            }
+
+            setScanAttempts(prev => prev + 1);
           }
-
-          setScanAttempts(prev => prev + 1);
         } catch (error) {
           console.error('Error in scan loop:', error);
         }
@@ -383,9 +408,9 @@ const useQRScanner = () => {
       
       setIsScanning(false);
     }
-  }, [detectQR, isScanning, qrDetected]);
+  }, [cameras, currentCameraIndex, detectQR, isScanning, qrDetected]);
 
-  // Stop scanning with secure cleanup
+  // Stop scanning with proper cleanup
   const stopScanning = useCallback(() => {
     console.log('Stopping scanner...');
     
@@ -426,12 +451,24 @@ const useQRScanner = () => {
     }
   }, [cameras.length, currentCameraIndex, isScanning, stopScanning, startScanning]);
 
+  // Reset camera permissions
+  const resetCameraPermissions = useCallback(() => {
+    localStorage.removeItem('privacyNoticeAccepted');
+    setCameraPermissionGranted(null);
+    stopScanning();
+  }, [stopScanning]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stopScanning();
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
     };
-  }, [stopScanning]);
+  }, []);
 
   return {
     videoRef,
@@ -444,7 +481,8 @@ const useQRScanner = () => {
     cameraPermissionGranted,
     startScanning,
     stopScanning,
-    switchCamera
+    switchCamera,
+    resetCameraPermissions
   };
 };
 
@@ -522,11 +560,11 @@ const useInstallPrompt = () => {
 
 // Utility functions
 const detectQRType = (data: string): QRResult['type'] => {
-  if (data.startsWith('http://') || data.startsWith('https://')) return 'url';
-  if (data.startsWith('mailto:')) return 'email';
-  if (data.startsWith('tel:')) return 'phone';
-  if (data.startsWith('WIFI:')) return 'wifi';
-  if (data.includes('@') && data.includes('.')) return 'email';
+  if (/^https?:\/\//i.test(data)) return 'url';
+  if (/^mailto:/i.test(data) || /\S+@\S+\.\S+/.test(data)) return 'email';
+  if (/^tel:/i.test(data)) return 'phone';
+  if (/^WIFI:/i.test(data)) return 'wifi';
+  if (/^BEGIN:VCARD/i.test(data)) return 'contact';
   return 'text';
 };
 
@@ -738,7 +776,8 @@ const App: React.FC = () => {
     cameraPermissionGranted,
     startScanning,
     stopScanning,
-    switchCamera
+    switchCamera,
+    resetCameraPermissions
   } = useQRScanner();
 
   const [result, setResult] = useState<QRResult | null>(null);
@@ -1056,12 +1095,18 @@ const App: React.FC = () => {
                         : 'bg-white/5 border border-white/10 text-white/40 cursor-not-allowed'
                     }`}
                   >
-                    <RotateCcw className="w-4 h-4" />
+                    <Camera className="w-4 h-4" />
                   </button>
                 </div>
                 
                 {/* Privacy Controls */}
-                <div className="pt-4 border-t border-white/10">
+                <div className="pt-4 border-t border-white/10 space-y-2">
+                  <button
+                    onClick={resetCameraPermissions}
+                    className="w-full py-2 text-xs text-yellow-400 hover:text-yellow-300 transition-colors"
+                  >
+                    ↻ Resetear permisos de cámara
+                  </button>
                   <button
                     onClick={clearAnalytics}
                     className="w-full py-2 text-xs text-white/60 hover:text-white/80 transition-colors"
