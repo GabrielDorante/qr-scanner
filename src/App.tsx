@@ -15,6 +15,109 @@ interface AnalyticsEvent {
   [key: string]: any;
 }
 
+// Floating Code Fragments Component
+const FloatingCodeFragments: React.FC = () => {
+  const codeFragments = [
+    'const scanner = useQRScanner();',
+    'if (code) return code.data;',
+    'video.readyState === HAVE_ENOUGH_DATA',
+    'ctx.drawImage(video, 0, 0);',
+    'navigator.mediaDevices.getUserMedia',
+    'jsQR(imageData.data, width, height)',
+    'setIsScanning(true);',
+    'trackEvent("qr_scanned");'
+  ];
+
+  return (
+    <div className="fixed inset-0 pointer-events-none z-5">
+      {[...Array(3)].map((_, i) => (
+        <div
+          key={i}
+          className="absolute text-gray-600/20 font-mono text-xs animate-pulse"
+          style={{
+            left: `${10 + Math.random() * 80}%`,
+            top: `${10 + Math.random() * 80}%`,
+            animationDelay: `${Math.random() * 5}s`,
+            animationDuration: `${3 + Math.random() * 2}s`
+          }}
+        >
+          {codeFragments[Math.floor(Math.random() * codeFragments.length)]}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Animated Particles Component
+const AnimatedParticles: React.FC = () => {
+  const [particles, setParticles] = useState<Array<{
+    id: number;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    opacity: number;
+  }>>([]);
+
+  useEffect(() => {
+    const initialParticles = [...Array(25)].map((_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: (Math.random() - 0.5) * 0.5,
+      opacity: Math.random() * 0.5 + 0.1
+    }));
+    setParticles(initialParticles);
+
+    const interval = setInterval(() => {
+      setParticles(prev => prev.map(particle => ({
+        ...particle,
+        x: (particle.x + particle.vx + 100) % 100,
+        y: (particle.y + particle.vy + 100) % 100,
+        opacity: 0.1 + Math.sin(Date.now() * 0.001 + particle.id) * 0.2
+      })));
+    }, 50);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="fixed inset-0 pointer-events-none z-5">
+      {particles.map(particle => (
+        <div
+          key={particle.id}
+          className="absolute w-1 h-1 bg-blue-400 rounded-full transition-all duration-75"
+          style={{
+            left: `${particle.x}%`,
+            top: `${particle.y}%`,
+            opacity: particle.opacity
+          }}
+        />
+      ))}
+    </div>
+  );
+};
+
+// Corner Lights Component
+const CornerLights: React.FC = () => {
+  return (
+    <>
+      {/* Yellow light - top left */}
+      <div className="fixed top-0 left-0 w-32 h-32 pointer-events-none z-5">
+        <div className="w-full h-full bg-gradient-radial from-yellow-400/20 via-yellow-400/5 to-transparent rounded-full animate-pulse" 
+             style={{ animationDuration: '3s' }} />
+      </div>
+      
+      {/* Violet-blue light - bottom right */}
+      <div className="fixed bottom-0 right-0 w-32 h-32 pointer-events-none z-5">
+        <div className="w-full h-full bg-gradient-radial from-violet-500/20 via-violet-500/5 to-transparent rounded-full animate-pulse" 
+             style={{ animationDuration: '4s', animationDelay: '1s' }} />
+      </div>
+    </>
+  );
+};
+
 // QR Scanner Hook
 const useQRScanner = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -105,31 +208,6 @@ const useQRScanner = () => {
     return null;
   }, [scanAttempts]);
 
-  // Scan loop
-  const scanLoop = useCallback(() => {
-    if (!isScanning || !videoRef.current || !canvasRef.current) return;
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d')!;
-
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0);
-
-      const result = detectQR(canvas, ctx);
-      if (result) {
-        return result;
-      }
-
-      setScanAttempts(prev => prev + 1);
-    }
-
-    animationRef.current = requestAnimationFrame(scanLoop);
-    return null;
-  }, [isScanning, detectQR]);
-
   // Start scanning
   const startScanning = useCallback(async () => {
     try {
@@ -166,17 +244,13 @@ const useQRScanner = () => {
       setIsScanning(true);
       setScanAttempts(0);
       setStatus({ type: 'success', message: '¡Cámara activa! Apunta hacia un código QR' });
-      
-      // Start scan loop
-      const result = scanLoop();
-      return result;
 
     } catch (error) {
       console.error('Error accessing camera:', error);
       setStatus({ type: 'error', message: 'No se pudo acceder a la cámara. Verifica los permisos.' });
       throw error;
     }
-  }, [cameras, currentCameraIndex, getCameras, scanLoop]);
+  }, [cameras, currentCameraIndex, getCameras]);
 
   // Stop scanning
   const stopScanning = useCallback(() => {
@@ -213,25 +287,44 @@ const useQRScanner = () => {
     }
   }, [cameras.length, currentCameraIndex, isScanning, stopScanning, startScanning]);
 
-  // Effect for scan loop
+  // Continuous scanning loop
   useEffect(() => {
-    if (isScanning) {
-      const scan = () => {
-        const result = scanLoop();
-        if (!result) {
-          animationRef.current = requestAnimationFrame(scan);
-        }
+    if (!isScanning) return;
+
+    const scanLoop = () => {
+      if (!videoRef.current || !canvasRef.current) return;
+
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx || video.readyState !== video.HAVE_ENOUGH_DATA) {
+        animationRef.current = requestAnimationFrame(scanLoop);
+        return;
+      }
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+
+      const result = detectQR(canvas, ctx);
+      if (result) {
+        // QR detected - will be handled by parent component
         return result;
-      };
-      animationRef.current = requestAnimationFrame(scan);
-    }
-    
+      }
+
+      setScanAttempts(prev => prev + 1);
+      animationRef.current = requestAnimationFrame(scanLoop);
+    };
+
+    animationRef.current = requestAnimationFrame(scanLoop);
+
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isScanning, scanLoop]);
+  }, [isScanning, detectQR]);
 
   return {
     videoRef,
@@ -668,35 +761,28 @@ const App: React.FC = () => {
       <div className="fixed inset-0 z-0">
         {/* Enhanced Grid */}
         <div 
-          className="absolute inset-0 opacity-30"
+          className="absolute inset-0 opacity-40"
           style={{
             backgroundImage: `
-              linear-gradient(rgba(59, 130, 246, 0.1) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(59, 130, 246, 0.1) 1px, transparent 1px)
+              linear-gradient(rgba(59, 130, 246, 0.15) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(59, 130, 246, 0.15) 1px, transparent 1px)
             `,
-            backgroundSize: '30px 30px'
+            backgroundSize: '15px 15px'
           }}
         />
         
         {/* Gradient Overlay */}
         <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 via-transparent to-purple-500/20" />
-        
-        {/* Animated Particles */}
-        <div className="absolute inset-0">
-          {[...Array(20)].map((_, i) => (
-            <div
-              key={i}
-              className="absolute w-1 h-1 bg-blue-400/30 rounded-full animate-pulse"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 3}s`,
-                animationDuration: `${2 + Math.random() * 2}s`
-              }}
-            />
-          ))}
-        </div>
       </div>
+
+      {/* Animated Particles */}
+      <AnimatedParticles />
+      
+      {/* Floating Code Fragments */}
+      <FloatingCodeFragments />
+      
+      {/* Corner Lights */}
+      <CornerLights />
 
       {/* Main Content */}
       <div className="relative z-10 max-w-4xl mx-auto p-5">
@@ -734,9 +820,14 @@ const App: React.FC = () => {
                   {/* Scanner Overlay */}
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="w-64 h-64 border-2 border-blue-400 rounded-2xl relative">
-                      {/* Scanning Line */}
-                      <div className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-bounce" 
-                           style={{ top: '50%' }} />
+                      {/* Animated Scanning Line */}
+                      <div 
+                        className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent"
+                        style={{
+                          animation: 'scanLine 2s ease-in-out infinite',
+                          top: '0%'
+                        }}
+                      />
                       
                       {/* Corner Markers */}
                       <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-blue-400 rounded-tl-lg" />
