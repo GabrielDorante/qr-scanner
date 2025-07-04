@@ -149,14 +149,27 @@ async function startScanning() {
         // Request camera access
         const constraints = {
             video: {
-                facingMode: { ideal: 'environment' }, // Prefer back camera
-                width: { ideal: 1280, min: 640 },
-                height: { ideal: 720, min: 480 }
+                facingMode: 'environment', // Force back camera
+                width: { ideal: 1920, max: 1920, min: 320 },
+                height: { ideal: 1080, max: 1080, min: 240 }
             }
         };
         
         console.log('Requesting camera permission...');
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (error) {
+            // Fallback: try with any camera if back camera fails
+            console.log('Back camera failed, trying any camera...');
+            const fallbackConstraints = {
+                video: {
+                    width: { ideal: 1280, min: 320 },
+                    height: { ideal: 720, min: 240 }
+                }
+            };
+            stream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+        }
         
         console.log('Camera permission granted');
         showPermissionStatus(true);
