@@ -230,15 +230,64 @@ async function startScanning() {
         let errorMessage = '❌ Error al acceder a la cámara';
         
         if (error.name === 'NotAllowedError') {
-            errorMessage = '🚫 Permisos de cámara denegados. Por favor, permite el acceso a la cámara.';
+            errorMessage = '🚫 Permisos de cámara denegados. Haz clic en el ícono de cámara en la barra de direcciones y selecciona "Permitir". Luego recarga la página.';
         } else if (error.name === 'NotFoundError') {
             errorMessage = '📷 No se encontró ninguna cámara disponible.';
         } else if (error.name === 'NotSupportedError') {
             errorMessage = '🔒 Tu navegador no soporta acceso a la cámara.';
+        } else if (error.message && error.message.includes('Permission denied')) {
+            errorMessage = '🚫 Permisos de cámara denegados. Busca el ícono de cámara 📷 en la barra de direcciones de tu navegador y haz clic en "Permitir". Si no aparece, ve a Configuración del sitio y cambia los permisos de cámara a "Permitir".';
         }
         
         showStatus(errorMessage, 'error');
+        
+        // Show additional help for permission errors
+        if (error.name === 'NotAllowedError' || (error.message && error.message.includes('Permission denied'))) {
+            setTimeout(() => {
+                showCameraPermissionHelp();
+            }, 2000);
+        }
     }
+}
+
+// Show camera permission help modal
+function showCameraPermissionHelp() {
+    const helpModal = document.createElement('div');
+    helpModal.className = 'modal';
+    helpModal.style.display = 'flex';
+    helpModal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-icon">
+                <svg width="40" height="40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                </svg>
+            </div>
+            <h2>¿Cómo permitir acceso a la cámara?</h2>
+            <div style="text-align: left; margin: 20px 0;">
+                <p style="margin-bottom: 15px;"><strong>Paso 1:</strong> Busca el ícono de cámara 📷 en la barra de direcciones</p>
+                <p style="margin-bottom: 15px;"><strong>Paso 2:</strong> Haz clic en él y selecciona "Permitir"</p>
+                <p style="margin-bottom: 15px;"><strong>Paso 3:</strong> Recarga la página</p>
+                <hr style="margin: 20px 0; border: 1px solid rgba(255,255,255,0.1);">
+                <p style="font-size: 14px; color: rgba(255,255,255,0.7);">
+                    <strong>Si no ves el ícono:</strong><br>
+                    • Chrome: Configuración → Privacidad y seguridad → Configuración del sitio<br>
+                    • Firefox: Configuración → Privacidad y seguridad → Permisos<br>
+                    • Safari: Preferencias → Sitios web → Cámara
+                </p>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="this.closest('.modal').remove(); location.reload();">
+                    Entendido, recargar página
+                </button>
+                <button class="btn" style="background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8);" onclick="this.closest('.modal').remove();">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(helpModal);
+    helpModal.classList.add('fade-in');
 }
 
 // Start scanning loop
